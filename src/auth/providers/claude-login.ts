@@ -30,33 +30,98 @@ const LOCALHOST = "localhost";
 
 const KEYCHAIN_SERVICE = "Claude Code-credentials";
 
-async function readKeychainCredential(): Promise<ICredential | undefined> {
-  if (process.platform !== "darwin") return undefined;
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
 
-  const account = process.env["USER"] ?? process.env["USERNAME"];
-  if (!account) return undefined;
+function asString(value: unknown): string | undefined {
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
 
+function asDate(value: unknown): Date | undefined {
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? undefined : value;
+  }
+
+  if (typeof value === "number" && Number.isFinite(value)) {
+    const millis = value > 10_000_000_000 ? value : value * 1000;
+    const date = new Date(millis);
+    return Number.isNaN(date.getTime()) ? undefined : date;
+  }
+
+  if (typeof value === "string" && value.length > 0) {
+    const numeric = Number(value);
+    if (Number.isFinite(numeric) && value.trim() !== "") {
+      return asDate(numeric);
+    }
+
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? undefined : parsed;
+  }
+
+  return undefined;
+}
+
+function parseKeychainCredential(raw: string): ICredential | undefined {
+  if (raw.length === 0) {
+    return undefined;
+  }
+
+  let parsed: unknown;
   try {
-    const { stdout } = await execFileAsync("security", [
-      "find-generic-password", "-s", KEYCHAIN_SERVICE, "-a", account, "-w",
-    ], { timeout: 5000 });
+    parsed = JSON.parse(raw) as unknown;
+  } catch {
+    return undefined;
+  }
 
-    const raw = stdout.trim();
-    if (!raw) return undefined;
+  if (!isRecord(parsed)) {
+    return undefined;
+  }
 
-    const data = JSON.parse(raw) as Record<string, unknown>;
-    const accessToken = typeof data["accessToken"] === "string" ? data["accessToken"] : undefined;
-    if (!accessToken) return undefined;
+  const directPayload = parsed;
+  const nestedPayload = isRecord(parsed["claudeAiOauth"])
+    ? parsed["claudeAiOauth"]
+    : undefined;
+  const payloads = nestedPayload ? [nestedPayload, directPayload] : [directPayload];
+
+  for (const payload of payloads) {
+    const accessToken = asString(payload["accessToken"]) ?? asString(payload["access_token"]);
+    if (!accessToken) {
+      continue;
+    }
+
+    const refreshToken = asString(payload["refreshToken"]) ?? asString(payload["refresh_token"]);
+    const expiresAt = asDate(payload["expiresAt"] ?? payload["expires_at"]);
+    const email = asString(payload["email"]);
+    const plan = asString(payload["plan"])
+      ?? asString(payload["subscriptionType"])
+      ?? asString(payload["subscription_type"])
+      ?? asString(payload["rateLimitTier"])
+      ?? asString(payload["rate_limit_tier"]);
 
     return {
       provider: "anthropic",
       method: "native_login",
       token: accessToken,
-      ...(typeof data["refreshToken"] === "string" ? { refreshToken: data["refreshToken"] } : {}),
-      ...(typeof data["expiresAt"] === "string" ? { expiresAt: new Date(data["expiresAt"]) } : {}),
-      ...(typeof data["email"] === "string" ? { email: data["email"] } : {}),
-      ...(typeof data["plan"] === "string" ? { plan: data["plan"] } : {}),
+      ...(refreshToken !== undefined ? { refreshToken } : {}),
+      ...(expiresAt !== undefined ? { expiresAt } : {}),
+      ...(email !== undefined ? { email } : {}),
+      ...(plan !== undefined ? { plan } : {}),
     };
+  }
+
+  return undefined;
+}
+
+async function readKeychainCredential(): Promise<ICredential | undefined> {
+  if (process.platform !== "darwin") return undefined;
+
+  try {
+    const { stdout } = await execFileAsync("security", [
+      "find-generic-password", "-s", KEYCHAIN_SERVICE, "-w",
+    ], { timeout: 5000 });
+
+    return parseKeychainCredential(stdout.trim());
   } catch {
     return undefined;
   }
@@ -180,22 +245,8 @@ export class ClaudeLogin {
   }
 
   async isLoggedIn(): Promise<boolean> {
-    // Check our credential store first
-    const credential = await this.credentialStore.get("anthropic");
-    if (credential?.method === "native_login" && credential.token) {
-      const isExpired = credential.expiresAt ? new Date() > credential.expiresAt : false;
-      if (!isExpired) return true;
-    }
-    // Check Claude Code's keychain as fallback
-    const keychain = await readKeychainCredential();
-    if (keychain?.token) {
-      const isExpired = keychain.expiresAt ? new Date() > keychain.expiresAt : false;
-      if (!isExpired) {
-        await this.credentialStore.set("anthropic", keychain);
-        return true;
-      }
-    }
-    return false;
+    const credential = await this.getCachedCredential();
+    return credential !== undefined;
   }
 
   async getStatus(): Promise<{ loggedIn: boolean; email?: string | undefined; plan?: string | undefined }> {
@@ -210,6 +261,29 @@ export class ClaudeLogin {
       ...(credential.email !== undefined ? { email: credential.email } : {}),
       ...(credential.plan !== undefined ? { plan: credential.plan } : {}),
     };
+  }
+
+  async getCachedCredential(): Promise<ICredential | undefined> {
+    const existing = await this.credentialStore.get("anthropic");
+    if (existing?.method === "native_login" && existing.token) {
+      const isExpired = existing.expiresAt ? new Date() > existing.expiresAt : false;
+      if (!isExpired) {
+        return existing;
+      }
+    }
+
+    const keychain = await readKeychainCredential();
+    if (!keychain?.token) {
+      return undefined;
+    }
+
+    const isExpired = keychain.expiresAt ? new Date() > keychain.expiresAt : false;
+    if (isExpired) {
+      return undefined;
+    }
+
+    await this.credentialStore.set("anthropic", keychain);
+    return keychain;
   }
 
   // ── Internal ──────────────────────────────────────────────────────────

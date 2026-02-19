@@ -11,7 +11,15 @@ import { useModel } from "./hooks/useModel.js";
 import { useStream } from "./hooks/useStream.js";
 import { useCost } from "./hooks/useCost.js";
 import { usePanel } from "./hooks/usePanel.js";
-import type { IChatMessage, ModelRole, IGlobalConfig, IStreamChunk, IAgentState, ProviderName } from "../types/index.js";
+import type {
+  IChatMessage,
+  ModelRole,
+  IGlobalConfig,
+  IStreamChunk,
+  IAgentState,
+  ProviderName,
+  IModelResolution,
+} from "../types/index.js";
 import { DEFAULT_CONFIG, SUPPORTED_MODELS } from "../types/index.js";
 import type { ProviderRegistry } from "../providers/registry.js";
 import { v4Id } from "./utils.js";
@@ -28,6 +36,32 @@ interface IChatSessionOptions {
 interface IAppProps {
   readonly config: IGlobalConfig;
   readonly options: IChatSessionOptions;
+}
+
+function getCandidateModels(
+  config: IGlobalConfig,
+  resolution: IModelResolution,
+  activeModelId: string,
+): readonly string[] {
+  const candidates: string[] = [activeModelId];
+
+  if (resolution.source !== "user_override" && resolution.role) {
+    const roleConfig = config.roles[resolution.role];
+    if (roleConfig) {
+      candidates.push(roleConfig.primary, ...roleConfig.fallback);
+    }
+  }
+
+  const seen = new Set<string>();
+  const unique: string[] = [];
+  for (const modelId of candidates) {
+    if (!seen.has(modelId)) {
+      seen.add(modelId);
+      unique.push(modelId);
+    }
+  }
+
+  return unique;
 }
 
 function App({ config, options }: IAppProps): React.ReactElement {
@@ -109,76 +143,108 @@ function App({ config, options }: IAppProps): React.ReactElement {
 
       try {
         const registry = await getRegistry();
-        const provider = registry.hasModel(modelId) ? registry.getForModel(modelId) : undefined;
-
-        if (!provider) {
-          const errorMessage: IChatMessage = {
-            id: v4Id(),
-            role: "assistant",
-            content: `No provider available for model "${modelId}". Please configure a provider.`,
-            model: modelId,
-            createdAt: new Date(),
-          };
-          setMessages((prev) => [...prev, errorMessage]);
-          setIsProcessing(false);
-          return;
-        }
-
         const allMessages = [...messages, userMessage];
+        const candidateModels = getCandidateModels(config, resolution, modelId);
 
-        // Stream response with real-time display via useStream hook
-        const stream = provider.stream({
-          model: modelId,
-          messages: allMessages,
-          system: options.systemPrompt,
-          maxTokens: 16_000,
-        });
-
+        let responseModel = modelId;
+        let responseProvider: ProviderName = resolution.provider;
         let fullContent = "";
-        let caughtError: unknown;
+        let completed = false;
+        let lastError: unknown;
 
-        async function* instrumentedStream(
-          source: AsyncIterable<IStreamChunk>,
-        ): AsyncGenerator<IStreamChunk> {
-          try {
-            for await (const chunk of source) {
-              if (chunk.type === "text" && chunk.content) {
-                fullContent += chunk.content;
-              }
-              if (chunk.type === "usage" && chunk.usage) {
-                record(
-                  resolution.provider,
-                  modelId,
-                  chunk.usage.inputTokens,
-                  chunk.usage.outputTokens,
-                  resolution.role,
-                );
-              }
-              yield chunk;
-            }
-          } catch (err: unknown) {
-            caughtError = err;
-            throw err;
+        for (const candidateModel of candidateModels) {
+          const provider = registry.hasModel(candidateModel)
+            ? registry.getForModel(candidateModel)
+            : undefined;
+
+          if (!provider) {
+            lastError = new Error(`No provider available for model "${candidateModel}"`);
+            continue;
           }
+
+          const candidateProvider = provider;
+
+          let candidateContent = "";
+          let caughtError: unknown;
+
+          const stream = candidateProvider.stream({
+            model: candidateModel,
+            messages: allMessages,
+            system: options.systemPrompt,
+            maxTokens: 16_000,
+          });
+
+          async function* instrumentedStream(
+            source: AsyncIterable<IStreamChunk>,
+          ): AsyncGenerator<IStreamChunk> {
+            try {
+              for await (const chunk of source) {
+                if (chunk.type === "text" && chunk.content) {
+                  candidateContent += chunk.content;
+                }
+                if (chunk.type === "usage" && chunk.usage) {
+                  record(
+                    candidateProvider.name as ProviderName,
+                    candidateModel,
+                    chunk.usage.inputTokens,
+                    chunk.usage.outputTokens,
+                    resolution.role,
+                  );
+                }
+                if (chunk.type === "error") {
+                  caughtError = new Error(
+                    chunk.error ?? `Model "${candidateModel}" stream failed`,
+                  );
+                }
+                yield chunk;
+              }
+            } catch (err: unknown) {
+              caughtError = err;
+              throw err;
+            }
+          }
+
+          resetStream();
+          await startStream(instrumentedStream(stream));
+
+          if (caughtError !== undefined) {
+            lastError = caughtError;
+            continue;
+          }
+
+          responseModel = candidateModel;
+          responseProvider = candidateProvider.name as ProviderName;
+          fullContent = candidateContent;
+          completed = true;
+          break;
         }
 
-        resetStream();
-        await startStream(instrumentedStream(stream));
-
-        if (caughtError !== undefined) {
-          throw caughtError;
+        if (!completed) {
+          throw (lastError ?? new Error("No model could produce a response"));
         }
 
         const assistantMessage: IChatMessage = {
           id: v4Id(),
           role: "assistant",
           content: fullContent,
-          model: modelId,
-          provider: resolution.provider,
+          model: responseModel,
+          provider: responseProvider,
           createdAt: new Date(),
         };
 
-        setMessages((prev) => [...prev, assistantMessage]);
+        setMessages((prev) => {
+          const output: IChatMessage[] = [...prev];
+          if (responseModel !== modelId) {
+            output.push({
+              id: v4Id(),
+              role: "system",
+              content: `Primary model "${modelId}" failed. Switched to fallback "${responseModel}".`,
+              createdAt: new Date(),
+            });
+          }
+          output.push(assistantMessage);
+          return output;
+        });
       } catch (error: unknown) {
         const errorContent = error instanceof Error ? error.message : String(error);
         const errorMessage: IChatMessage = {
@@ -193,7 +259,19 @@ function App({ config, options }: IAppProps): React.ReactElement {
         setIsProcessing(false);
       }
     },
-    [messages, modelId, resolution, options.systemPrompt, record, switchModel, switchRole, startStream, resetStream, getRegistry],
+    [
+      config,
+      messages,
+      modelId,
+      resolution,
+      options.systemPrompt,
+      record,
+      switchModel,
+      switchRole,
+      startStream,
+      resetStream,
+      getRegistry,
+    ],
   );
 
   if (panel.isSplitPanelActive) {
@@ -519,6 +597,33 @@ export async function startChatSession(options: IChatSessionOptions): Promise<vo
   await waitUntilExit();
 }
 
+type FirstRunProvider = "claude" | "codex" | "gemini" | "kimi";
+
+interface IFirstRunLogin {
+  login(): Promise<unknown>;
+}
+
+async function createFirstRunLogin(provider: FirstRunProvider): Promise<IFirstRunLogin> {
+  switch (provider) {
+    case "claude": {
+      const { ClaudeLogin } = await import("../auth/providers/claude-login.js");
+      return new ClaudeLogin();
+    }
+    case "codex": {
+      const { CodexLogin } = await import("../auth/providers/codex-login.js");
+      return new CodexLogin();
+    }
+    case "gemini": {
+      const { GeminiLogin } = await import("../auth/providers/gemini-login.js");
+      return new GeminiLogin();
+    }
+    case "kimi": {
+      const { KimiLogin } = await import("../auth/providers/kimi-login.js");
+      return new KimiLogin();
+    }
+  }
+}
+
 export async function runFirstRunSetup(): Promise<void> {
   const { confirm } = await import("@inquirer/prompts");
   const pc = await import("picocolors");
@@ -536,7 +641,7 @@ export async function runFirstRunSetup(): Promise<void> {
     ].join("\n"),
   );
 
-  const providers = ["claude", "codex", "gemini", "kimi"] as const;
+  const providers: readonly FirstRunProvider[] = ["claude", "codex", "gemini", "kimi"];
 
   for (const provider of providers) {
     const shouldLogin = await confirm({
@@ -547,12 +652,8 @@ export async function runFirstRunSetup(): Promise<void> {
     if (shouldLogin) {
       process.stdout.write(pc.default.cyan(`  Logging in to ${provider}...\n`));
       try {
-        const mod = await import(`../auth/providers/${provider}-login.js`);
-        const LoginClass = mod.default ?? Object.values(mod)[0];
-        if (typeof LoginClass === "function") {
-          const login = new (LoginClass as new () => { login(): Promise<void> })();
-          await login.login();
-        }
+        const login = await createFirstRunLogin(provider);
+        await login.login();
         process.stdout.write(pc.default.green(`  ✓ ${provider} - Logged in successfully\n`));
       } catch {
         process.stdout.write(pc.default.red(`  ✗ ${provider} - Login failed (you can retry later)\n`));

@@ -116,17 +116,34 @@ export class KimiLogin {
   }
 
   async isLoggedIn(): Promise<boolean> {
-    return this.readCachedCredentials() !== undefined;
+    const credential = this.readCachedCredentials();
+    if (!credential) {
+      return false;
+    }
+
+    await this.credentialStore.set("kimi", credential);
+    return true;
   }
 
   async getStatus(): Promise<{ loggedIn: boolean; email?: string | undefined; plan?: string | undefined }> {
-    const credential = this.readCachedCredentials();
+    const loggedIn = await this.isLoggedIn();
+    if (!loggedIn) return { loggedIn: false };
+
+    const credential = await this.credentialStore.get("kimi");
     if (!credential) return { loggedIn: false };
 
     return {
       loggedIn: true,
       ...(credential.email !== undefined ? { email: credential.email } : {}),
     };
+  }
+
+  async getCachedCredential(): Promise<ICredential | undefined> {
+    const credential = this.readCachedCredentials();
+    if (credential) {
+      await this.credentialStore.set("kimi", credential);
+    }
+    return credential;
   }
 
   // ── Internal ──────────────────────────────────────────────────────────

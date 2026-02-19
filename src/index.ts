@@ -80,6 +80,12 @@ export { OpenAIAdapter } from "./providers/openai-adapter.js";
 export { GeminiAdapter } from "./providers/gemini-adapter.js";
 export { KimiAdapter } from "./providers/kimi-adapter.js";
 export { OllamaAdapter } from "./providers/ollama-adapter.js";
+export {
+  ClaudeNativeCLIAdapter,
+  CodexNativeCLIAdapter,
+  GeminiNativeCLIAdapter,
+  KimiNativeCLIAdapter,
+} from "./providers/native-cli-adapters.js";
 
 // ── Tools ───────────────────────────────────────────────────────────────
 

@@ -9,3 +9,9 @@ export { OpenAIAdapter } from "./openai-adapter.js";
 export { GeminiAdapter } from "./gemini-adapter.js";
 export { KimiAdapter } from "./kimi-adapter.js";
 export { OllamaAdapter } from "./ollama-adapter.js";
+export {
+  ClaudeNativeCLIAdapter,
+  CodexNativeCLIAdapter,
+  GeminiNativeCLIAdapter,
+  KimiNativeCLIAdapter,
+} from "./native-cli-adapters.js";

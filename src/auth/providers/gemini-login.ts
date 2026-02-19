@@ -239,24 +239,34 @@ export class GeminiLogin {
   async isLoggedIn(): Promise<boolean> {
     const credential = this.readCachedCredential();
     if (!credential) return false;
-    if (credential.expiresAt && new Date() > credential.expiresAt) {
-      return credential.refreshToken !== undefined;
+    if (credential.expiresAt && new Date() > credential.expiresAt && credential.refreshToken === undefined) {
+      return false;
     }
+
+    await this.credentialStore.set("google", credential);
     return true;
   }
 
   async getStatus(): Promise<{ loggedIn: boolean; email?: string | undefined; plan?: string | undefined }> {
-    const credential = this.readCachedCredential();
-    if (!credential) return { loggedIn: false };
+    const loggedIn = await this.isLoggedIn();
+    if (!loggedIn) return { loggedIn: false };
 
-    const isExpired = credential.expiresAt ? new Date() > credential.expiresAt : false;
-    if (isExpired && !credential.refreshToken) return { loggedIn: false };
+    const credential = await this.credentialStore.get("google");
+    if (!credential) return { loggedIn: false };
 
     return {
       loggedIn: true,
       ...(credential.email !== undefined ? { email: credential.email } : {}),
       plan: "Google AI",
     };
+  }
+
+  async getCachedCredential(): Promise<ICredential | undefined> {
+    const credential = this.readCachedCredential();
+    if (credential) {
+      await this.credentialStore.set("google", credential);
+    }
+    return credential;
   }
 
   // ── Read from Gemini CLI cache ────────────────────────────────────────

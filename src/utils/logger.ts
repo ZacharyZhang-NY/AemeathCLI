@@ -42,7 +42,7 @@ ensureLogDir();
 
 const logger = pino({
   name: "aemeathcli",
-  level: process.env["AEMEATHCLI_LOG_LEVEL"] ?? "info",
+  level: process.env["AEMEATHCLI_LOG_LEVEL"] ?? "error",
   redact: {
     paths: REDACT_PATHS,
     censor: "[REDACTED]",

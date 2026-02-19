@@ -102,7 +102,12 @@ export class CredentialStore {
     const machineId = process.env["USER"] ?? process.env["USERNAME"] ?? "aemeathcli";
     const homedir = process.env["HOME"] ?? process.env["USERPROFILE"] ?? "/";
     const password = `aemeathcli-${machineId}-${homedir}`;
-    return scryptSync(password, salt, KEY_LENGTH, { N: 32768, r: 8, p: 1 });
+    return scryptSync(password, salt, KEY_LENGTH, {
+      N: 32768,
+      r: 8,
+      p: 1,
+      maxmem: 64 * 1024 * 1024,
+    });
   }
 
   private storeEncrypted(provider: ProviderName, data: string): void {

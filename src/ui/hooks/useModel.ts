@@ -26,27 +26,26 @@ export function useModel(
   const [userOverride, setUserOverride] = useState<string | undefined>(initialModel);
   const [currentRole, setCurrentRole] = useState<ModelRole | undefined>(initialRole);
 
-  if (userOverride) {
-    router.setUserOverride(userOverride);
-  }
-
   const resolution = useMemo(
-    () => router.resolve(currentRole),
+    () => {
+      router.setUserOverride(userOverride);
+      return router.resolve(currentRole);
+    },
     [router, currentRole, userOverride],
   );
 
-  const switchModel = useCallback(
-    (modelId: string) => {
-      router.setUserOverride(modelId);
-      setUserOverride(modelId);
+  const switchModel = useCallback((modelId: string) => {
+    setUserOverride(modelId);
+  }, []);
+
+  const switchRole = useCallback(
+    (role: ModelRole) => {
+      router.setUserOverride(undefined);
+      setCurrentRole(role);
+      setUserOverride(undefined);
     },
     [router],
   );
-
-  const switchRole = useCallback((role: ModelRole) => {
-    setCurrentRole(role);
-    setUserOverride(undefined);
-  }, []);
 
   return {
     resolution,

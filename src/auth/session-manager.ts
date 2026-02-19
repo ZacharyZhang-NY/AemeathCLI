@@ -123,6 +123,18 @@ export class SessionManager {
         return undefined;
       }
 
+      // Prefer direct cached credential extraction from the provider login module.
+      if (typeof loginModule.getCachedCredential === "function") {
+        const cached = await loginModule.getCachedCredential();
+        if (cached) {
+          await this.credentialStore.set(provider, cached);
+          if (!this.isExpired(cached) || cached.refreshToken !== undefined) {
+            logger.info({ provider }, "Loaded credentials from provider CLI cache");
+            return cached;
+          }
+        }
+      }
+
       const status = await loginModule.getStatus();
       if (!status.loggedIn) {
         return undefined;
@@ -153,6 +165,7 @@ export class SessionManager {
   private async loadLoginModule(provider: ProviderName): Promise<{
     getStatus(): Promise<{ loggedIn: boolean; email?: string | undefined; plan?: string | undefined }>;
     isLoggedIn(): Promise<boolean>;
+    getCachedCredential?(): Promise<ICredential | undefined>;
   } | undefined> {
     try {
       switch (provider) {

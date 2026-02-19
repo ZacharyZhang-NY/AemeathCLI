@@ -13,6 +13,13 @@ function isValidProvider(value: string): value is LoginProvider {
   return (VALID_PROVIDERS as readonly string[]).includes(value);
 }
 
+const PROVIDER_MODEL_SWITCH: Readonly<Record<LoginProvider, { provider: ProviderName; model: string }>> = {
+  claude: { provider: "anthropic", model: "claude-sonnet-4-6" },
+  codex: { provider: "openai", model: "gpt-5.2" },
+  gemini: { provider: "google", model: "gemini-2.5-pro" },
+  kimi: { provider: "kimi", model: "kimi-k2.5" },
+};
+
 export function createAuthCommand(): Command {
   const auth = new Command("auth")
     .description("Authentication & account management");
@@ -99,6 +106,25 @@ export function createAuthCommand(): Command {
           process.stdout.write(pc.red(`  ✗ ${provider}`) + " — Not configured\n");
         }
       }
+
+      try {
+        const { ApiKeyFallback } = await import("../../auth/api-key-fallback.js");
+        const fallback = new ApiKeyFallback();
+        const apiKeyStatus: ReadonlyArray<{ label: string; provider: ProviderName }> = [
+          { label: "Claude", provider: "anthropic" },
+          { label: "OpenAI", provider: "openai" },
+          { label: "Google", provider: "google" },
+          { label: "Kimi", provider: "kimi" },
+        ];
+
+        process.stdout.write("\nFallback API keys:\n");
+        for (const item of apiKeyStatus) {
+          const hasKey = await fallback.hasKey(item.provider);
+          process.stdout.write(`  ${item.label}: ${hasKey ? "set" : "not set"}\n`);
+        }
+      } catch {
+        // Best-effort status output
+      }
     });
 
   auth
@@ -138,7 +164,41 @@ export function createAuthCommand(): Command {
     .command("switch <provider>")
     .description("Set a provider as the default")
     .action(async (provider: string) => {
-      process.stdout.write(pc.cyan(`Default provider set to ${provider}\n`));
+      if (!isValidProvider(provider)) {
+        process.stderr.write(
+          pc.red(`Unknown provider: "${provider}". Valid: ${VALID_PROVIDERS.join(", ")}\n`),
+        );
+        process.exitCode = 2;
+        return;
+      }
+
+      try {
+        const target = PROVIDER_MODEL_SWITCH[provider];
+        const { ConfigStore } = await import("../../storage/config-store.js");
+        const store = new ConfigStore();
+        const cfg = store.loadGlobal();
+
+        const nextConfig = {
+          ...cfg,
+          defaultModel: target.model,
+          providers: {
+            ...cfg.providers,
+            [target.provider]: {
+              ...(cfg.providers[target.provider] ?? {}),
+              enabled: true,
+            },
+          },
+        };
+
+        store.saveGlobal(nextConfig);
+        process.stdout.write(
+          pc.green(`Default provider switched to ${provider} (model: ${target.model})\n`),
+        );
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        process.stderr.write(pc.red(`Failed to switch provider: ${message}\n`));
+        process.exitCode = 3;
+      }
     });
 
   return auth;

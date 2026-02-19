@@ -156,6 +156,24 @@ export async function createDefaultRegistry(): Promise<ProviderRegistry> {
 
   const { SessionManager } = await import("../auth/session-manager.js");
   const session = new SessionManager();
+  const { execa } = await import("execa");
+
+  const cliAvailability = new Map<string, boolean>();
+  const hasCli = async (command: string): Promise<boolean> => {
+    const cached = cliAvailability.get(command);
+    if (cached !== undefined) {
+      return cached;
+    }
+
+    try {
+      await execa("which", [command], { timeout: 3000 });
+      cliAvailability.set(command, true);
+      return true;
+    } catch {
+      cliAvailability.set(command, false);
+      return false;
+    }
+  };
 
   const providerLoaders: ReadonlyArray<{
     name: string;
@@ -165,32 +183,84 @@ export async function createDefaultRegistry(): Promise<ProviderRegistry> {
       name: "anthropic",
       load: async () => {
         const { ClaudeAdapter } = await import("./claude-adapter.js");
-        const token = await session.getToken("anthropic").catch(() => undefined);
-        return new ClaudeAdapter(token !== undefined ? { apiKey: token } : undefined);
+        const credential = await session.getActiveCredential("anthropic").catch(() => undefined);
+        const useNative = credential?.method === "native_login"
+          || (credential === undefined && await hasCli("claude"));
+
+        if (useNative) {
+          const { ClaudeNativeCLIAdapter, logNativeAdapterSelection } = await import(
+            "./native-cli-adapters.js"
+          );
+          logNativeAdapterSelection("anthropic");
+          return new ClaudeNativeCLIAdapter();
+        }
+
+        return new ClaudeAdapter(
+          credential?.token !== undefined ? { apiKey: credential.token } : undefined,
+        );
       },
     },
     {
       name: "openai",
       load: async () => {
         const { OpenAIAdapter } = await import("./openai-adapter.js");
-        const token = await session.getToken("openai").catch(() => undefined);
-        return new OpenAIAdapter(token !== undefined ? { apiKey: token } : undefined);
+        const credential = await session.getActiveCredential("openai").catch(() => undefined);
+        const useNative = credential?.method === "native_login"
+          || (credential === undefined && await hasCli("codex"));
+
+        if (useNative) {
+          const { CodexNativeCLIAdapter, logNativeAdapterSelection } = await import(
+            "./native-cli-adapters.js"
+          );
+          logNativeAdapterSelection("openai");
+          return new CodexNativeCLIAdapter();
+        }
+
+        return new OpenAIAdapter(
+          credential?.token !== undefined ? { apiKey: credential.token } : undefined,
+        );
       },
     },
     {
       name: "google",
       load: async () => {
         const { GeminiAdapter } = await import("./gemini-adapter.js");
-        const token = await session.getToken("google").catch(() => undefined);
-        return new GeminiAdapter(token !== undefined ? { apiKey: token } : undefined);
+        const credential = await session.getActiveCredential("google").catch(() => undefined);
+        const useNative = credential?.method === "native_login"
+          || (credential === undefined && await hasCli("gemini"));
+
+        if (useNative) {
+          const { GeminiNativeCLIAdapter, logNativeAdapterSelection } = await import(
+            "./native-cli-adapters.js"
+          );
+          logNativeAdapterSelection("google");
+          return new GeminiNativeCLIAdapter();
+        }
+
+        return new GeminiAdapter(
+          credential?.token !== undefined ? { apiKey: credential.token } : undefined,
+        );
       },
     },
     {
       name: "kimi",
       load: async () => {
         const { KimiAdapter } = await import("./kimi-adapter.js");
-        const token = await session.getToken("kimi").catch(() => undefined);
-        return new KimiAdapter(token !== undefined ? { apiKey: token } : undefined);
+        const credential = await session.getActiveCredential("kimi").catch(() => undefined);
+        const useNative = credential?.method === "native_login"
+          || (credential === undefined && await hasCli("kimi"));
+
+        if (useNative) {
+          const { KimiNativeCLIAdapter, logNativeAdapterSelection } = await import(
+            "./native-cli-adapters.js"
+          );
+          logNativeAdapterSelection("kimi");
+          return new KimiNativeCLIAdapter();
+        }
+
+        return new KimiAdapter(
+          credential?.token !== undefined ? { apiKey: credential.token } : undefined,
+        );
       },
     },
   ];
