@@ -1,0 +1,11 @@
+node_modules/
+dist/
+*.tsbuildinfo
+.env
+.env.local
+*.log
+coverage/
+.DS_Store
+*.enc
+PRD.md
+docs/plans/2026-02-18-aemeathcli-implementation-plan.md
