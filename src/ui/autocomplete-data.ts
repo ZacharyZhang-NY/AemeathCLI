@@ -23,7 +23,7 @@ export const SLASH_COMMANDS: readonly ISlashCommand[] = [
   { command: "/cost", description: "Show session cost breakdown" },
   { command: "/clear", description: "Clear conversation" },
   { command: "/compact", description: "Compress context" },
-  { command: "/team", description: "Create 8-role agent team with split-panel" },
+  { command: "/team", description: "Create agent team: /team [name] [size]" },
   { command: "/team list", description: "List active teams" },
   { command: "/team stop", description: "Deactivate team and return to single-pane" },
   { command: "/quit", description: "Exit" },

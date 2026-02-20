@@ -3,7 +3,7 @@
  */
 
 import React from "react";
-import { Box } from "ink";
+import { Box, Text } from "ink";
 import { MessageView } from "../components/MessageView.js";
 import { InputBar } from "../components/InputBar.js";
 import { StatusBar } from "../components/StatusBar.js";
@@ -46,9 +46,23 @@ export function SinglePane({
         gitChanges={gitChanges}
       />
       <MessageView messages={messages} />
-      {isProcessing && streamingContent ? (
-        <Box marginLeft={2} marginBottom={1}>
-          <Spinner label="Generating..." />
+      {isProcessing ? (
+        <Box flexDirection="column" marginLeft={1} marginBottom={1}>
+          <Text color="cyan" bold>
+            [{model}]
+          </Text>
+          <Box marginLeft={2} marginBottom={1}>
+            <Text wrap="wrap">{streamingContent && streamingContent.length > 0 ? streamingContent : "..."}</Text>
+          </Box>
+          <Box marginLeft={1}>
+            <Spinner
+              label={
+                streamingContent && streamingContent.length > 0
+                  ? "Streaming response..."
+                  : "Thinking..."
+              }
+            />
+          </Box>
         </Box>
       ) : null}
       <InputBar onSubmit={onSubmit} isProcessing={isProcessing} />

@@ -4,13 +4,27 @@
 
 import { Command } from "commander";
 import pc from "picocolors";
-import type { ProviderName, ModelRole, PaneLayout, IAgentConfig } from "../../types/index.js";
+import type { PaneLayout, IAgentConfig, ModelRole } from "../../types/index.js";
 import { SUPPORTED_MODELS } from "../../types/index.js";
 
 const VALID_LAYOUTS: readonly PaneLayout[] = ["auto", "horizontal", "vertical", "grid"];
 
 function isValidLayout(value: string): value is PaneLayout {
   return (VALID_LAYOUTS as readonly string[]).includes(value);
+}
+
+function parseAgentCount(raw: string): number | undefined {
+  const normalized = raw.trim();
+  if (!/^\d+$/.test(normalized)) {
+    return undefined;
+  }
+
+  const parsed = Number(normalized);
+  if (!Number.isSafeInteger(parsed) || parsed < 1) {
+    return undefined;
+  }
+
+  return parsed;
 }
 
 function readLegacyModelFromArgv(argv: readonly string[]): string | undefined {
@@ -83,9 +97,9 @@ export function createTeamCommand(): Command {
     .option("-l, --layout <layout>", "Pane layout (auto, horizontal, vertical, grid)", "auto")
     .option("-m, --model <model>", "Default model for agents", "claude-sonnet-4-6")
     .action(async (name: string, options: { agents: string; layout: string; model: string }) => {
-      const agentCount = parseInt(options.agents, 10);
-      if (isNaN(agentCount) || agentCount < 1 || agentCount > 8) {
-        process.stderr.write(pc.red("Agent count must be between 1 and 8\n"));
+      const agentCount = parseAgentCount(options.agents);
+      if (agentCount === undefined) {
+        process.stderr.write(pc.red("Agent count must be a positive integer\n"));
         process.exitCode = 2;
         return;
       }
@@ -112,13 +126,14 @@ export function createTeamCommand(): Command {
       try {
         const { TeamManager } = await import("../../teams/team-manager.js");
         const manager = new TeamManager();
+        const defaultRole: ModelRole = "coding";
 
         const agents = Array.from({ length: agentCount }, (_, i) => ({
           name: `agent-${i + 1}`,
           agentType: "general",
           model: selectedModel,
-          provider: modelInfo.provider as ProviderName,
-          role: "coding" as ModelRole,
+          provider: modelInfo.provider,
+          role: defaultRole,
         }));
 
         const teamConfig = await manager.createTeam(name, { agents });

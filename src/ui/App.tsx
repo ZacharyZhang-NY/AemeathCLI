@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useCallback, useEffect, useRef } from "react";
-import { render, Box, Text } from "ink";
+import { render } from "ink";
 import { SinglePane } from "./layouts/SinglePane.js";
 import { SplitPane } from "./layouts/SplitPane.js";
 import { useModel } from "./hooks/useModel.js";
@@ -70,7 +70,7 @@ function App({ config, options }: IAppProps): React.ReactElement {
     options.model,
     options.role as ModelRole | undefined,
   );
-  const { state: streamState, startStream, cancelStream, reset: resetStream } = useStream();
+  const { state: streamState, startStream, reset: resetStream } = useStream();
   const { totalCost, totalTokens, record } = useCost(config.cost);
   const panel = usePanel();
 
@@ -106,9 +106,9 @@ function App({ config, options }: IAppProps): React.ReactElement {
   // Handle initial message
   useEffect(() => {
     if (options.initialMessage) {
-      handleSubmit(options.initialMessage);
+      void handleSubmit(options.initialMessage);
     }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleSubmit = useCallback(
     async (input: string) => {
@@ -220,7 +220,14 @@ function App({ config, options }: IAppProps): React.ReactElement {
         }
 
         if (!completed) {
-          throw (lastError ?? new Error("No model could produce a response"));
+          if (lastError instanceof Error) {
+            throw lastError;
+          }
+          throw new Error(
+            typeof lastError === "string"
+              ? lastError
+              : "No model could produce a response",
+          );
         }
 
         const assistantMessage: IChatMessage = {
@@ -274,6 +281,10 @@ function App({ config, options }: IAppProps): React.ReactElement {
     ],
   );
 
+  const handleSubmitSync = useCallback((input: string): void => {
+    void handleSubmit(input);
+  }, [handleSubmit]);
+
   if (panel.isSplitPanelActive) {
     return (
       <SplitPane
@@ -282,7 +293,7 @@ function App({ config, options }: IAppProps): React.ReactElement {
         onSelectAgent={panel.selectAgent}
         agentOutputs={panel.agentOutputs}
         isProcessing={isProcessing}
-        onSubmit={handleSubmit}
+        onSubmit={handleSubmitSync}
         model={modelId}
         role={resolution.role}
         tokenCount={totalTokens}
@@ -296,7 +307,7 @@ function App({ config, options }: IAppProps): React.ReactElement {
     <SinglePane
       messages={messages}
       isProcessing={isProcessing}
-      onSubmit={handleSubmit}
+      onSubmit={handleSubmitSync}
       model={modelId}
       role={resolution.role}
       tokenCount={totalTokens}
@@ -346,7 +357,8 @@ async function handleInternalCommand(
 ): Promise<void> {
   const parts = input.trim().split(/\s+/);
   const command = parts[0];
-  const arg = parts[1];
+  const args = parts.slice(1);
+  const arg = args[0];
 
   switch (command) {
     case "/help": {
@@ -432,7 +444,7 @@ async function handleInternalCommand(
       break;
 
     case "/team":
-      await handleTeamCommand(arg, ctx);
+      await handleTeamCommand(args, ctx);
       break;
 
     case "/quit":
@@ -445,7 +457,7 @@ async function handleInternalCommand(
   }
 }
 
-// ── Team Agent Definitions (8-role split-panel team per PRD section 8) ────
+// ── Team Agent Definitions (base templates for split-panel teams) ──────────
 
 interface ITeamAgentDefinition {
   readonly name: string;
@@ -514,14 +526,46 @@ const TEAM_AGENT_DEFINITIONS: readonly ITeamAgentDefinition[] = [
   },
 ];
 
-async function handleTeamCommand(subcommand: string | undefined, ctx: ICommandContext): Promise<void> {
-  if (subcommand === "stop") {
+const DEFAULT_TEAM_SIZE = TEAM_AGENT_DEFINITIONS.length;
+
+function parseTeamSize(value: string | undefined): number | undefined {
+  if (value === undefined || !/^\d+$/.test(value)) {
+    return undefined;
+  }
+
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed < 1) {
+    return undefined;
+  }
+
+  return parsed;
+}
+
+function buildTeamAgents(agentCount: number): ITeamAgentDefinition[] {
+  return Array.from({ length: agentCount }, (_, index) => {
+    const template = TEAM_AGENT_DEFINITIONS[index % TEAM_AGENT_DEFINITIONS.length];
+    if (!template) {
+      throw new Error("Team agent templates are unavailable.");
+    }
+
+    const cycle = Math.floor(index / TEAM_AGENT_DEFINITIONS.length);
+    return {
+      ...template,
+      name: cycle === 0 ? template.name : `${template.name}-${cycle + 1}`,
+    };
+  });
+}
+
+async function handleTeamCommand(args: readonly string[], ctx: ICommandContext): Promise<void> {
+  const [firstArg, secondArg, thirdArg] = args;
+
+  if (firstArg === "stop") {
     ctx.panel.deactivate();
     addSystemMessage(ctx, "Team deactivated. Returned to single-pane mode.");
     return;
   }
 
-  if (subcommand === "list") {
+  if (firstArg === "list") {
     try {
       const { TeamManager } = await import("../teams/team-manager.js");
       const manager = new TeamManager();
@@ -539,18 +583,51 @@ async function handleTeamCommand(subcommand: string | undefined, ctx: ICommandCo
     return;
   }
 
-  // Default: create the 8-role team and activate split-panel mode
-  const teamName = subcommand ?? `team-${Date.now()}`;
+  if (thirdArg !== undefined) {
+    addSystemMessage(ctx, "Usage: /team [name] [size] | /team [size] | /team list | /team stop");
+    return;
+  }
 
-  addSystemMessage(ctx, `Creating 8-role agent team "${teamName}" with split-panel mode...`);
+  let teamName = `team-${Date.now()}`;
+  let teamSize = DEFAULT_TEAM_SIZE;
+
+  const isNumericFirstArg = firstArg !== undefined && /^\d+$/.test(firstArg);
+  const firstAsSize = parseTeamSize(firstArg);
+
+  if (isNumericFirstArg && firstAsSize === undefined) {
+    addSystemMessage(ctx, `Invalid team size: "${firstArg}". Team size must be a positive integer.`);
+    return;
+  }
+
+  if (firstArg !== undefined && !isNumericFirstArg) {
+    teamName = firstArg;
+    if (secondArg !== undefined) {
+      const parsed = parseTeamSize(secondArg);
+      if (parsed === undefined) {
+        addSystemMessage(ctx, `Invalid team size: "${secondArg}". Team size must be a positive integer.`);
+        return;
+      }
+      teamSize = parsed;
+    }
+  } else if (firstAsSize !== undefined) {
+    teamSize = firstAsSize;
+    if (secondArg !== undefined) {
+      addSystemMessage(ctx, "Usage: /team [name] [size] | /team [size] | /team list | /team stop");
+      return;
+    }
+  }
+
+  const teamAgents = buildTeamAgents(teamSize);
+
+  addSystemMessage(ctx, `Creating ${teamSize}-agent team "${teamName}" with split-panel mode...`);
 
   try {
     const { TeamManager } = await import("../teams/team-manager.js");
     const manager = new TeamManager();
 
     const teamConfig = await manager.createTeam(teamName, {
-      description: "8-role enterprise agent team with split-panel coordination",
-      agents: TEAM_AGENT_DEFINITIONS,
+      description: `${teamSize}-agent enterprise team with split-panel coordination`,
+      agents: teamAgents,
     });
 
     // Build IAgentState objects for the panel
@@ -567,12 +644,12 @@ async function handleTeamCommand(subcommand: string | undefined, ctx: ICommandCo
     await manager.startAgents(teamName);
 
     // Output confirmation with each agent's role
-    const agentLines = TEAM_AGENT_DEFINITIONS.map(
+    const agentLines = teamAgents.map(
       (def) => `  ${def.name} (${def.model}) — ${def.role}`,
     );
     addSystemMessage(
       ctx,
-      `Team "${teamName}" created — split-panel active.\n${agentLines.join("\n")}\nUse Tab to switch agents. /team stop to return to single-pane.`,
+      `Team "${teamName}" created with ${teamConfig.members.length} agents — split-panel active.\n${agentLines.join("\n")}\nUse Tab to switch agents. /team stop to return to single-pane.`,
     );
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : String(error);

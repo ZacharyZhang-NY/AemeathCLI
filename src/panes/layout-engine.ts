@@ -36,7 +36,7 @@ const MIN_PANE_WIDTH = 40;
 const MIN_PANE_HEIGHT = 10;
 const DEFAULT_TERMINAL_WIDTH = 120;
 const DEFAULT_TERMINAL_HEIGHT = 40;
-const MAX_SUPPORTED_PANES = 8;
+const MAX_GRID_COLUMNS = 3;
 
 // ── Layout Engine ───────────────────────────────────────────────────────
 
@@ -69,7 +69,10 @@ export class LayoutEngine {
       };
     }
 
-    const effectiveCount = Math.min(paneCount, config.maxPanes, MAX_SUPPORTED_PANES);
+    const effectiveCount = Math.max(
+      1,
+      Math.min(paneCount, config.maxPanes, this.getMaxPanes()),
+    );
     const layout = config.layout === "auto"
       ? this.resolveAutoLayout(effectiveCount)
       : config.layout;
@@ -112,7 +115,7 @@ export class LayoutEngine {
   getMaxPanes(): number {
     const maxByWidth = Math.floor(this.terminalSize.columns / MIN_PANE_WIDTH);
     const maxByHeight = Math.floor(this.terminalSize.rows / MIN_PANE_HEIGHT);
-    return Math.min(maxByWidth * maxByHeight, MAX_SUPPORTED_PANES);
+    return Math.max(1, maxByWidth * maxByHeight);
   }
 
   /**
@@ -148,10 +151,14 @@ export class LayoutEngine {
    *   5+ agents → leader top + grid bottom
    */
   private computeGridSize(paneCount: number): { gridRows: number; gridCols: number } {
-    if (paneCount <= 2) return { gridRows: 1, gridCols: 2 };
+    if (paneCount <= 1) return { gridRows: 1, gridCols: 1 };
+    if (paneCount === 2) return { gridRows: 1, gridCols: 2 };
     if (paneCount <= 4) return { gridRows: 2, gridCols: 2 };
-    if (paneCount <= 6) return { gridRows: 2, gridCols: 3 };
-    return { gridRows: 3, gridCols: 3 };
+
+    const bottomPaneCount = paneCount - 1;
+    const gridCols = Math.min(bottomPaneCount, MAX_GRID_COLUMNS);
+    const gridRows = 1 + Math.ceil(bottomPaneCount / gridCols);
+    return { gridRows, gridCols };
   }
 
   /**
@@ -287,7 +294,7 @@ export class LayoutEngine {
     }
 
     const bottomPanes = panes.slice(1);
-    const bottomCols = Math.min(bottomPanes.length, 3);
+    const bottomCols = Math.min(bottomPanes.length, MAX_GRID_COLUMNS);
     const bottomRows = Math.ceil(bottomPanes.length / bottomCols);
     const cellWidth = Math.floor(100 / bottomCols);
     const cellHeight = Math.floor(60 / bottomRows);
@@ -329,13 +336,15 @@ export class LayoutEngine {
    * Detect terminal width from environment.
    */
   private detectTerminalWidth(): number {
-    return process.stdout.columns ?? DEFAULT_TERMINAL_WIDTH;
+    const columns = process.stdout.columns;
+    return Number.isFinite(columns) && columns > 0 ? columns : DEFAULT_TERMINAL_WIDTH;
   }
 
   /**
    * Detect terminal height from environment.
    */
   private detectTerminalHeight(): number {
-    return process.stdout.rows ?? DEFAULT_TERMINAL_HEIGHT;
+    const rows = process.stdout.rows;
+    return Number.isFinite(rows) && rows > 0 ? rows : DEFAULT_TERMINAL_HEIGHT;
   }
 }

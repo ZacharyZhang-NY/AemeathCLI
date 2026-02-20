@@ -240,6 +240,14 @@ export class AgentProcess {
     const child = this.child;
     if (!child) return;
 
+    child.stdout?.on("data", (chunk: Buffer | string) => {
+      this.drainChildOutput("stdout", chunk);
+    });
+
+    child.stderr?.on("data", (chunk: Buffer | string) => {
+      this.drainChildOutput("stderr", chunk);
+    });
+
     child.on("message", (raw: unknown) => {
       this.handleChildMessage(raw);
     });
@@ -305,18 +313,7 @@ export class AgentProcess {
         break;
     }
 
-    // Notify all registered callbacks
-    for (const callback of this.messageCallbacks) {
-      try {
-        callback(method, params);
-      } catch (error: unknown) {
-        const reason = error instanceof Error ? error.message : String(error);
-        logger.error(
-          { agent: this.config.name, error: reason },
-          "Message callback threw",
-        );
-      }
-    }
+    this.notifyCallbacks(method, params);
   }
 
   /** Wait for the child to send agent.register. Rejects on timeout or early exit. */
@@ -353,6 +350,35 @@ export class AgentProcess {
       agentName: this.config.name,
       status,
     });
+  }
+
+  private drainChildOutput(stream: "stdout" | "stderr", chunk: Buffer | string): void {
+    const content = typeof chunk === "string" ? chunk : chunk.toString("utf-8");
+    if (content.length === 0) {
+      return;
+    }
+
+    const method = stream === "stdout" ? "agent.streamChunk" : "agent.message";
+    this.notifyCallbacks(method, {
+      agentId: this.config.agentId,
+      agentName: this.config.name,
+      stream,
+      content,
+    });
+  }
+
+  private notifyCallbacks(method: string, params: Record<string, unknown>): void {
+    for (const callback of this.messageCallbacks) {
+      try {
+        callback(method, params);
+      } catch (error: unknown) {
+        const reason = error instanceof Error ? error.message : String(error);
+        logger.error(
+          { agent: this.config.name, error: reason },
+          "Message callback threw",
+        );
+      }
+    }
   }
 
   private cleanup(): void {
