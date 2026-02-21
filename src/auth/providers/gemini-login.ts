@@ -114,13 +114,15 @@ export class GeminiLogin {
       );
     }
 
-    // Spawn `gemini login` — browser opens automatically
-    logger.info("Spawning gemini login (browser will open automatically)");
+    // Gemini CLI has no `login` subcommand. Running it with a simple prompt
+    // triggers the OAuth login flow automatically if not authenticated.
+    // Use -p (non-interactive) so it exits after login + one response.
+    logger.info("Spawning gemini CLI to trigger login (browser will open automatically)");
     try {
-      await this.spawnInteractive(CLI_COMMAND, ["login"]);
-    } catch (error: unknown) {
-      const msg = error instanceof Error ? error.message : String(error);
-      throw new AuthenticationError("google", `Gemini login failed: ${msg}`);
+      await this.spawnInteractive(CLI_COMMAND, ["-p", "hello"]);
+    } catch {
+      // The CLI may exit non-zero if the user closes the browser before completing login.
+      // Check if credentials were saved regardless.
     }
 
     // Read the freshly cached credentials
@@ -204,7 +206,11 @@ export class GeminiLogin {
 
   private spawnInteractive(command: string, args: readonly string[]): Promise<void> {
     return new Promise((resolve, reject) => {
-      const child = spawn(command, [...args], { stdio: "inherit", timeout: 300_000 });
+      const child = spawn(command, [...args], {
+        stdio: "inherit",
+        timeout: 300_000,
+        shell: process.platform === "win32",
+      });
       child.on("close", (code) => {
         if (code === 0) resolve();
         else reject(new Error(`Process exited with code ${String(code)}`));
@@ -216,7 +222,10 @@ export class GeminiLogin {
   private async isCliAvailable(): Promise<boolean> {
     try {
       const cmd = process.platform === "win32" ? "where" : "which";
-      await execFileAsync(cmd, [CLI_COMMAND], { timeout: 3000 });
+      await execFileAsync(cmd, [CLI_COMMAND], {
+        timeout: 3000,
+        shell: process.platform === "win32",
+      });
       return true;
     } catch {
       return false;

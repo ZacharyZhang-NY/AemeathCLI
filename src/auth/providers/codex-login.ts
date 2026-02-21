@@ -198,7 +198,11 @@ export class CodexLogin {
 
   private spawnInteractive(command: string, args: readonly string[]): Promise<void> {
     return new Promise((resolve, reject) => {
-      const child = spawn(command, [...args], { stdio: "inherit", timeout: 300_000 });
+      const child = spawn(command, [...args], {
+        stdio: "inherit",
+        timeout: 300_000,
+        shell: process.platform === "win32",
+      });
       child.on("close", (code) => {
         if (code === 0) resolve();
         else reject(new Error(`Process exited with code ${String(code)}`));
@@ -210,7 +214,10 @@ export class CodexLogin {
   private async isCliAvailable(): Promise<boolean> {
     try {
       const cmd = process.platform === "win32" ? "where" : "which";
-      await execFileAsync(cmd, [CLI_COMMAND], { timeout: 3000 });
+      await execFileAsync(cmd, [CLI_COMMAND], {
+        timeout: 3000,
+        shell: process.platform === "win32",
+      });
       return true;
     } catch {
       return false;
