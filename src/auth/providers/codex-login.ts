@@ -107,8 +107,12 @@ export class CodexLogin {
       try {
         await this.spawnInteractive(CLI_COMMAND, ["login", "--device-auth"]);
       } catch {
-        const msg = error instanceof Error ? error.message : String(error);
-        throw new AuthenticationError("openai", `Codex login failed: ${msg}`);
+        throw new AuthenticationError(
+          "openai",
+          "Codex login failed. Make sure you have the Codex CLI installed:\n" +
+          "  npm install -g @openai/codex\n" +
+          "Or set an API key: aemeathcli auth set-key codex <key>",
+        );
       }
     }
 
@@ -199,11 +203,10 @@ export class CodexLogin {
 
   private async isCliAvailable(): Promise<boolean> {
     try {
-      await execa(CLI_COMMAND, ["--help"], { timeout: 5000, stdin: "ignore", stdout: "ignore", stderr: "ignore" });
+      await execa(CLI_COMMAND, ["--version"], { timeout: 5000, stdin: "ignore", stdout: "ignore", stderr: "ignore" });
       return true;
-    } catch (error: unknown) {
-      const code = (error as { code?: string }).code;
-      return code !== "ENOENT";
+    } catch {
+      return false;
     }
   }
 }

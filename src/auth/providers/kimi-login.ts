@@ -90,9 +90,15 @@ export class KimiLogin {
       // Some versions may not have `kimi login` — try spawning interactive session
       try {
         await this.spawnInteractive(CLI_COMMAND, []);
-      } catch (error2: unknown) {
-        const msg = error2 instanceof Error ? error2.message : String(error2);
-        throw new AuthenticationError("kimi", `Kimi login failed: ${msg}`);
+      } catch {
+        throw new AuthenticationError(
+          "kimi",
+          "Kimi login failed. Make sure you have the Kimi CLI installed:\n" +
+          (process.platform === "win32"
+            ? "  irm https://code.kimi.com/install.ps1 | iex\n"
+            : "  curl -L code.kimi.com/install.sh | bash\n") +
+          "Or set an API key: aemeathcli auth set-key kimi <key>",
+        );
       }
     }
 
@@ -180,11 +186,10 @@ export class KimiLogin {
 
   private async isCliAvailable(): Promise<boolean> {
     try {
-      await execa(CLI_COMMAND, ["--help"], { timeout: 5000, stdin: "ignore", stdout: "ignore", stderr: "ignore" });
+      await execa(CLI_COMMAND, ["--version"], { timeout: 5000, stdin: "ignore", stdout: "ignore", stderr: "ignore" });
       return true;
-    } catch (error: unknown) {
-      const code = (error as { code?: string }).code;
-      return code !== "ENOENT";
+    } catch {
+      return false;
     }
   }
 }

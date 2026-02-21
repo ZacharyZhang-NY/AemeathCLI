@@ -294,11 +294,10 @@ export class GeminiLogin {
 
   private async isCliAvailable(): Promise<boolean> {
     try {
-      await execa(CLI_COMMAND, ["--help"], { timeout: 5000, stdin: "ignore", stdout: "ignore", stderr: "ignore" });
+      await execa(CLI_COMMAND, ["--version"], { timeout: 5000, stdin: "ignore", stdout: "ignore", stderr: "ignore" });
       return true;
-    } catch (error: unknown) {
-      const code = (error as { code?: string }).code;
-      return code !== "ENOENT";
+    } catch {
+      return false;
     }
   }
 }
