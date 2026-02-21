@@ -1,6 +1,6 @@
 {
   "name": "aemeathcli",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Next-generation multi-model CLI coding tool with agent teams and split-panel coordination",
   "type": "module",
   "bin": {
