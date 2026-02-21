@@ -8,6 +8,7 @@
   Agent teams &middot; Split-panel coordination &middot; Role-based routing
   <br />
   <br />
+  <a href="https://aemeathcli.pages.dev"><img src="https://img.shields.io/badge/website-aemeathcli.pages.dev-34d399?style=flat-square" alt="Website" /></a>
   <a href="https://www.npmjs.com/package/aemeathcli"><img src="https://img.shields.io/npm/v/aemeathcli?style=flat-square&color=red" alt="npm" /></a>
   <a href="#installation"><img src="https://img.shields.io/badge/node-%3E%3D20-brightgreen?style=flat-square" alt="Node.js >= 20" /></a>
   <a href="#license"><img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="MIT License" /></a>

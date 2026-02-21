@@ -1,0 +1,966 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AemeathCLI - Next-Generation Multi-Model CLI Coding Tool</title>
+    <meta name="description" content="Orchestrate multiple AI models across parallel agent teams in your terminal. Route Claude for planning, GPT for coding, Gemini for reviews — all in split-panel panes.">
+    <meta name="theme-color" content="#050505">
+    <meta name="robots" content="index, follow">
+    <link rel="canonical" href="https://aemeathcli.pages.dev">
+
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="AemeathCLI - Next-Generation Multi-Model CLI Coding Tool">
+    <meta property="og:description" content="Orchestrate multiple AI models across parallel agent teams in your terminal. Route Claude for planning, GPT for coding, Gemini for reviews.">
+    <meta property="og:url" content="https://aemeathcli.pages.dev">
+    <meta property="og:site_name" content="AemeathCLI">
+
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="AemeathCLI - Multi-Model CLI Coding Tool">
+    <meta name="twitter:description" content="Orchestrate multiple AI models across parallel agent teams in your terminal.">
+
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#9670;</text></svg>">
+
+    <script type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "AemeathCLI",
+        "applicationCategory": "DeveloperApplication",
+        "operatingSystem": "macOS, Linux, Windows",
+        "description": "Next-generation multi-model CLI coding tool with agent teams, split-panel coordination, and role-based model routing.",
+        "offers": {
+            "@type": "Offer",
+            "price": "0",
+            "priceCurrency": "USD"
+        },
+        "license": "https://opensource.org/licenses/MIT"
+    }
+    </script>
+
+    <style>
+        :root {
+            --bg-root: #050505;
+            --bg-panel: #0a0a0a;
+            --border-dim: #262626;
+            --border-active: #404040;
+            --text-primary: #ededed;
+            --text-secondary: #888888;
+            --text-muted: #555555;
+            --accent-diff-bg: rgba(16, 185, 129, 0.1);
+            --accent-diff-text: #34d399;
+            --syntax-blue: #60a5fa;
+            --syntax-purple: #c084fc;
+            --syntax-string: #a5b4fc;
+            --space-unit: 1.5rem;
+            --grid-line: 1px solid var(--border-dim);
+            --mono-font: 'SF Mono', 'Fira Code', 'Roboto Mono', 'Cascadia Code', 'JetBrains Mono', ui-monospace, monospace;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+
+        html {
+            scroll-behavior: smooth;
+        }
+
+        body {
+            background-color: var(--bg-root);
+            color: var(--text-primary);
+            font-family: var(--mono-font);
+            font-size: 14px;
+            line-height: 1.6;
+            overflow-x: hidden;
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+        }
+
+        /* -- Utility Classes -- */
+        .text-sec { color: var(--text-secondary); }
+        .text-mut { color: var(--text-muted); }
+
+        /* -- Main Layout -- */
+        .main-grid {
+            display: grid;
+            grid-template-columns: 280px 1fr;
+            min-height: 100vh;
+        }
+
+        /* -- Sidebar -- */
+        .sidebar {
+            border-right: var(--grid-line);
+            padding: var(--space-unit);
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            position: sticky;
+            top: 0;
+            height: 100vh;
+        }
+
+        .brand {
+            font-size: 16px;
+            font-weight: 700;
+            margin-bottom: 2rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .brand-icon { color: var(--accent-diff-text); }
+
+        .nav-list { list-style: none; }
+
+        .nav-item {
+            display: block;
+            color: var(--text-secondary);
+            text-decoration: none;
+            padding: 8px 0;
+            transition: color 0.2s;
+            cursor: pointer;
+        }
+
+        .nav-item:hover { color: var(--text-primary); }
+        .nav-item.active { color: var(--accent-diff-text); }
+        .nav-item::before {
+            content: '> ';
+            opacity: 0;
+            transition: opacity 0.2s;
+            color: var(--accent-diff-text);
+        }
+        .nav-item:hover::before,
+        .nav-item:focus-visible::before { opacity: 1; }
+
+        .nav-item:focus-visible {
+            outline: 2px solid var(--accent-diff-text);
+            outline-offset: 2px;
+        }
+
+        .sidebar-footer {
+            color: var(--text-muted);
+            font-size: 12px;
+        }
+
+        .sidebar-footer div + div { margin-top: 8px; }
+
+        /* -- Mobile Header -- */
+        .mobile-header {
+            display: none;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            background: var(--bg-root);
+            border-bottom: var(--grid-line);
+            padding: 12px var(--space-unit);
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .mobile-brand {
+            font-size: 16px;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .hamburger {
+            background: none;
+            border: var(--grid-line);
+            color: var(--text-secondary);
+            padding: 8px 12px;
+            cursor: pointer;
+            font-family: var(--mono-font);
+            font-size: 14px;
+            transition: color 0.2s, border-color 0.2s;
+        }
+
+        .hamburger:hover,
+        .hamburger:focus-visible {
+            color: var(--text-primary);
+            border-color: var(--border-active);
+        }
+
+        .hamburger:focus-visible {
+            outline: 2px solid var(--accent-diff-text);
+            outline-offset: 2px;
+        }
+
+        .mobile-nav-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            z-index: 200;
+            background: rgba(0, 0, 0, 0.8);
+        }
+
+        .mobile-nav-overlay.open { display: block; }
+
+        .mobile-nav {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 280px;
+            height: 100vh;
+            background: var(--bg-root);
+            border-right: var(--grid-line);
+            padding: var(--space-unit);
+            z-index: 201;
+            display: flex;
+            flex-direction: column;
+            gap: 2rem;
+            transform: translateX(-100%);
+            transition: transform 0.3s ease;
+        }
+
+        .mobile-nav-overlay.open .mobile-nav { transform: translateX(0); }
+
+        .mobile-nav-close {
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            font-family: var(--mono-font);
+            font-size: 14px;
+            cursor: pointer;
+            align-self: flex-end;
+            padding: 4px;
+        }
+
+        .mobile-nav-close:hover { color: var(--text-primary); }
+
+        .mobile-nav .nav-item {
+            font-size: 16px;
+            padding: 12px 0;
+        }
+
+        /* -- Content Area -- */
+        .content-area {
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* -- Hero Section -- */
+        .hero {
+            padding: 4rem var(--space-unit);
+            border-bottom: var(--grid-line);
+        }
+
+        .status-line {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-bottom: 2rem;
+            display: flex;
+            gap: 1rem;
+        }
+
+        h1 {
+            font-size: clamp(2rem, 4vw, 3.5rem);
+            line-height: 1.1;
+            margin-bottom: 2rem;
+            max-width: 800px;
+            font-weight: 500;
+        }
+
+        .hero-sub {
+            color: var(--text-secondary);
+        }
+
+        .hero-cursor {
+            display: inline-block;
+            width: 0.6em;
+            height: 1em;
+            background-color: var(--accent-diff-text);
+            animation: blink 1s step-end infinite;
+            vertical-align: middle;
+        }
+
+        @keyframes blink { 50% { opacity: 0; } }
+
+        /* -- Terminal Window -- */
+        .terminal-window {
+            margin-top: 3rem;
+            border: var(--grid-line);
+            background: #000;
+        }
+
+        .terminal-header {
+            padding: 10px 16px;
+            border-bottom: var(--grid-line);
+            display: flex;
+            justify-content: space-between;
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        .code-block {
+            padding: 20px 0;
+            font-family: var(--mono-font);
+            font-size: 13px;
+            position: relative;
+            overflow-x: auto;
+        }
+
+        .line {
+            display: grid;
+            grid-template-columns: 60px 1fr;
+            line-height: 1.6;
+            transition: background-color 0.15s;
+        }
+
+        .ln {
+            text-align: right;
+            padding-right: 20px;
+            color: var(--text-muted);
+            user-select: none;
+            position: relative;
+        }
+
+        .code {
+            color: var(--text-secondary);
+            white-space: pre;
+        }
+
+        .line.add {
+            background-color: var(--accent-diff-bg);
+        }
+
+        .line.add .code { color: var(--text-primary); }
+        .line.add .ln { color: var(--accent-diff-text); }
+
+        .line.add .ln::before {
+            content: '+';
+            position: absolute;
+            left: 12px;
+            color: var(--accent-diff-text);
+        }
+
+        .line:hover { background-color: rgba(255, 255, 255, 0.03); }
+        .line.add:hover { background-color: rgba(16, 185, 129, 0.15); }
+
+        /* -- Syntax Highlighting -- */
+        .kwd { color: var(--syntax-purple); }
+        .str { color: var(--syntax-string); }
+        .fn { color: var(--syntax-blue); }
+        .tag { color: var(--syntax-blue); }
+        .attr { color: var(--text-secondary); }
+
+        /* -- Features Grid -- */
+        .features-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            border-bottom: var(--grid-line);
+        }
+
+        .feature-cell {
+            border-right: var(--grid-line);
+            border-bottom: var(--grid-line);
+            padding: 2rem;
+            transition: background 0.2s;
+        }
+
+        .feature-cell:last-child { border-right: none; }
+        .feature-cell:hover { background: var(--bg-panel); }
+
+        .feature-header {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-bottom: 1rem;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .feature-title {
+            font-size: 16px;
+            margin-bottom: 0.5rem;
+            color: var(--text-primary);
+        }
+
+        .feature-desc {
+            color: var(--text-secondary);
+            font-size: 13px;
+            max-width: 90%;
+        }
+
+        /* -- Demo Section -- */
+        .demo-section {
+            padding: 4rem var(--space-unit);
+            border-bottom: var(--grid-line);
+        }
+
+        .demo-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 2rem;
+        }
+
+        .demo-title {
+            font-size: 16px;
+            margin-bottom: 1.5rem;
+            color: var(--text-primary);
+        }
+
+        .demo-desc {
+            color: var(--text-secondary);
+            margin-bottom: 2rem;
+        }
+
+        .command-list { border-top: var(--grid-line); }
+
+        .command-item {
+            padding: 1rem 0;
+            border-bottom: var(--grid-line);
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+        }
+
+        .command-prompt { color: var(--accent-diff-text); }
+
+        .terminal-output {
+            border: var(--grid-line);
+            background: #000;
+            padding: 1.5rem;
+        }
+
+        .terminal-label {
+            margin-bottom: 1rem;
+            color: var(--text-muted);
+            font-size: 12px;
+        }
+
+        .terminal-content {
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+
+        .terminal-content > div + div { margin-top: 0.25rem; }
+
+        .terminal-highlight { color: var(--accent-diff-text); }
+        .terminal-strong { color: var(--text-primary); margin-top: 1rem; }
+
+        .terminal-code-line {
+            margin-top: 0.5rem;
+            padding-left: 1rem;
+            border-left: 2px solid var(--border-active);
+        }
+
+        .terminal-prompt-line {
+            margin-top: 1rem;
+        }
+
+        /* -- CTA Section -- */
+        .cta-section {
+            padding: 4rem var(--space-unit);
+            border-bottom: var(--grid-line);
+        }
+
+        .cta-heading {
+            font-weight: 500;
+            font-size: 24px;
+        }
+
+        .cta-sub {
+            color: var(--text-secondary);
+            margin-top: 0.5rem;
+        }
+
+        .install-box {
+            display: flex;
+            align-items: center;
+            border: var(--grid-line);
+            background: #000;
+            padding: 0;
+            max-width: 500px;
+            margin-top: 2rem;
+            transition: border-color 0.2s;
+        }
+
+        .install-box:focus-within { border-color: var(--text-secondary); }
+
+        .prompt-arrow {
+            padding: 16px;
+            color: var(--text-muted);
+            border-right: var(--grid-line);
+            user-select: none;
+        }
+
+        .install-input {
+            background: transparent;
+            border: none;
+            color: var(--text-primary);
+            font-family: var(--mono-font);
+            font-size: 14px;
+            padding: 16px;
+            width: 100%;
+            outline: none;
+        }
+
+        .copy-btn {
+            padding: 0 16px;
+            color: var(--text-muted);
+            font-size: 12px;
+            cursor: pointer;
+            transition: color 0.2s;
+            background: none;
+            border: none;
+            border-left: var(--grid-line);
+            font-family: var(--mono-font);
+            white-space: nowrap;
+            min-height: 48px;
+        }
+
+        .copy-btn:hover,
+        .copy-btn:focus-visible { color: var(--text-primary); }
+
+        .copy-btn:focus-visible {
+            outline: 2px solid var(--accent-diff-text);
+            outline-offset: -2px;
+        }
+
+        /* -- Footer / Shortcuts Bar -- */
+        .shortcuts-bar {
+            padding: 1rem var(--space-unit);
+            border-top: var(--grid-line);
+            display: flex;
+            justify-content: space-between;
+            font-size: 12px;
+            color: var(--text-muted);
+            background: var(--bg-root);
+            margin-top: auto;
+        }
+
+        .key-group {
+            display: flex;
+            gap: 1.5rem;
+        }
+
+        .key {
+            color: var(--text-primary);
+            margin-right: 4px;
+        }
+
+        /* -- Scroll Reveal Animations -- */
+        .reveal {
+            opacity: 0;
+            transform: translateY(20px);
+            transition: opacity 0.6s ease, transform 0.6s ease;
+        }
+
+        .reveal.visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        .reveal-delay-1 { transition-delay: 0.1s; }
+        .reveal-delay-2 { transition-delay: 0.2s; }
+        .reveal-delay-3 { transition-delay: 0.3s; }
+
+        /* -- Screen Reader Only (visually hidden but accessible) -- */
+        .sr-only {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+            white-space: nowrap;
+            border: 0;
+        }
+
+        /* -- Skip Link (Accessibility) -- */
+        .skip-link {
+            position: absolute;
+            top: -100%;
+            left: 0;
+            background: var(--accent-diff-text);
+            color: #000;
+            padding: 8px 16px;
+            z-index: 300;
+            font-family: var(--mono-font);
+            text-decoration: none;
+        }
+
+        .skip-link:focus {
+            top: 0;
+        }
+
+        /* -- Responsive -- */
+        @media (max-width: 1024px) {
+            .main-grid { grid-template-columns: 1fr; }
+            .sidebar { display: none; }
+            .mobile-header { display: flex; }
+
+            .hero { padding: 3rem var(--space-unit); }
+
+            h1 { font-size: clamp(1.5rem, 5vw, 2.5rem); }
+
+            .features-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .feature-cell {
+                border-right: none;
+            }
+
+            .demo-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .install-box {
+                max-width: 100%;
+            }
+
+            .shortcuts-bar {
+                flex-direction: column;
+                gap: 0.5rem;
+            }
+
+            .line {
+                grid-template-columns: 40px 1fr;
+            }
+
+            .line.add .ln::before {
+                left: 4px;
+            }
+        }
+
+        @media (max-width: 480px) {
+            :root {
+                --space-unit: 1rem;
+            }
+
+            .hero { padding: 2rem var(--space-unit); }
+
+            .code-block { font-size: 11px; }
+
+            .feature-cell { padding: 1.5rem; }
+        }
+
+        /* -- Reduced Motion -- */
+        @media (prefers-reduced-motion: reduce) {
+            html { scroll-behavior: auto; }
+            .hero-cursor { animation: none; opacity: 1; }
+            .reveal {
+                opacity: 1;
+                transform: none;
+                transition: none;
+            }
+        }
+    </style>
+</head>
+<body>
+    <a href="#main-content" class="skip-link">Skip to main content</a>
+
+    <!-- Mobile Header -->
+    <header class="mobile-header" role="banner">
+        <div class="mobile-brand">
+            <span class="brand-icon" aria-hidden="true">&#9670;</span> AemeathCLI
+        </div>
+        <button class="hamburger" aria-label="Open navigation menu" aria-expanded="false" aria-controls="mobile-nav-overlay">
+            [=]
+        </button>
+    </header>
+
+    <!-- Mobile Navigation Overlay -->
+    <div id="mobile-nav-overlay" class="mobile-nav-overlay" role="dialog" aria-label="Navigation menu">
+        <div class="mobile-nav">
+            <button class="mobile-nav-close" aria-label="Close navigation menu">[x]</button>
+            <nav aria-label="Mobile navigation">
+                <ul class="nav-list">
+                    <li><a href="#overview" class="nav-item active">1. Overview</a></li>
+                    <li><a href="#features" class="nav-item">2. Features</a></li>
+                    <li><a href="#demo" class="nav-item">3. Agent Teams</a></li>
+                    <li><a href="#install" class="nav-item">4. Get Started</a></li>
+                </ul>
+            </nav>
+        </div>
+    </div>
+
+    <div class="main-grid">
+        <!-- Sidebar -->
+        <aside class="sidebar" aria-label="Sidebar navigation">
+            <div>
+                <div class="brand">
+                    <span class="brand-icon" aria-hidden="true">&#9670;</span> AemeathCLI
+                </div>
+                <nav aria-label="Main navigation">
+                    <ul class="nav-list">
+                        <li><a href="#overview" class="nav-item active">1. Overview</a></li>
+                        <li><a href="#features" class="nav-item">2. Features</a></li>
+                        <li><a href="#demo" class="nav-item">3. Agent Teams</a></li>
+                        <li><a href="#install" class="nav-item">4. Get Started</a></li>
+                    </ul>
+                </nav>
+            </div>
+            <div class="sidebar-footer">
+                <div>v1.0.10 stable</div>
+                <div>Waiting for input...</div>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main id="main-content" class="content-area">
+            <!-- Hero Section -->
+            <section id="overview" class="hero" aria-label="Product overview">
+                <div class="status-line">
+                    <span>9 models supported</span>
+                    <span>src/core/engine.ts</span>
+                </div>
+
+                <h1>
+                    ITERATE FASTER.<br>
+                    <span class="hero-sub">NEVER LEAVE YOUR TERMINAL.</span><span class="hero-cursor" aria-hidden="true"></span>
+                </h1>
+
+                <!-- Terminal Window -->
+                <div class="terminal-window reveal">
+                    <div class="terminal-header">
+                        <span>src/components/Refactor.tsx</span>
+                        <span>esc when done</span>
+                    </div>
+                    <div class="code-block" role="img" aria-label="Code diff showing an AI-suggested optimization: memoizing a computation result using useMemo">
+                        <div class="line">
+                            <span class="ln">102</span>
+                            <span class="code"><span class="kwd">export const</span> <span class="fn">Optimize</span> = ({ <span class="attr">state</span> }) =&gt; {</span>
+                        </div>
+                        <div class="line">
+                            <span class="ln">103</span>
+                            <span class="code">  <span class="kwd">const</span> engine = <span class="fn">useContext</span>(DiffContext);</span>
+                        </div>
+                        <div class="line add">
+                            <span class="ln">104</span>
+                            <span class="code">  <span class="kwd">const</span> memoizedResult = <span class="fn">useMemo</span>(() =&gt; {</span>
+                        </div>
+                        <div class="line add">
+                            <span class="ln">105</span>
+                            <span class="code">    <span class="kwd">return</span> engine.<span class="fn">compute</span>(state, { <span class="attr">depth</span>: <span class="str">'deep'</span> });</span>
+                        </div>
+                        <div class="line add">
+                            <span class="ln">106</span>
+                            <span class="code">  }, [state, engine]);</span>
+                        </div>
+                        <div class="line">
+                            <span class="ln">107</span>
+                            <span class="code">  <span class="kwd">return</span> <span class="tag">&lt;Display</span> <span class="attr">val</span>={memoizedResult} <span class="tag">/&gt;</span>;</span>
+                        </div>
+                        <div class="line">
+                            <span class="ln">108</span>
+                            <span class="code">}</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Features Grid -->
+            <section id="features" class="features-grid" aria-label="Key features">
+                <div class="feature-cell reveal">
+                    <div class="feature-header">
+                        <span>01</span>
+                        <span>[x]</span>
+                    </div>
+                    <h2 class="feature-title">Multi-Model Engine</h2>
+                    <p class="feature-desc">Route Claude for planning, GPT for coding, Gemini for reviews &mdash; all orchestrated in one terminal session.</p>
+                </div>
+                <div class="feature-cell reveal reveal-delay-1">
+                    <div class="feature-header">
+                        <span>02</span>
+                        <span>[x]</span>
+                    </div>
+                    <h2 class="feature-title">Agent Teams</h2>
+                    <p class="feature-desc">LLM-designed teams spawn in iTerm2/tmux split panes with hub-and-spoke coordination.</p>
+                </div>
+                <div class="feature-cell reveal reveal-delay-2">
+                    <div class="feature-header">
+                        <span>03</span>
+                        <span>[x]</span>
+                    </div>
+                    <h2 class="feature-title">Smart Routing</h2>
+                    <p class="feature-desc">Automatic role-based model selection with intelligent fallback chains and cost tracking.</p>
+                </div>
+            </section>
+
+            <!-- Demo Section -->
+            <section id="demo" class="demo-section" aria-label="Product demonstration">
+                <div class="status-line">
+                    <span>&gt; diff output</span>
+                </div>
+
+                <div class="demo-grid">
+                    <div class="reveal">
+                        <h2 class="demo-title">Natural Language Refactoring</h2>
+                        <p class="demo-desc text-sec">
+                            Describe your intent in plain English directly in the CLI. AemeathCLI parses the AST and applies transformations safely.
+                        </p>
+
+                        <div class="command-list">
+                            <div class="command-item">
+                                <span class="command-prompt" aria-hidden="true">$</span>
+                                <span>refactor auth.ts to use Clerk</span>
+                            </div>
+                            <div class="command-item">
+                                <span class="command-prompt" aria-hidden="true">$</span>
+                                <span>optimize image loading in Hero.tsx</span>
+                            </div>
+                            <div class="command-item">
+                                <span class="command-prompt" aria-hidden="true">$</span>
+                                <span>generate unit tests for utils/*</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="terminal-output reveal reveal-delay-1">
+                        <div class="terminal-label">Terminal Output</div>
+                        <div class="terminal-content" role="img" aria-label="Terminal output showing AST analysis completing in 40 milliseconds and a suggested refactor using ClerkProvider">
+                            <div>&gt; Analyzing AST... <span class="terminal-highlight">Done (40ms)</span></div>
+                            <div>&gt; Identifying dependencies... <span class="terminal-highlight">Done</span></div>
+                            <div class="terminal-strong">Suggested Refactor:</div>
+                            <div class="terminal-code-line">
+                                <span class="kwd">import</span> { ClerkProvider } <span class="kwd">from</span> <span class="str">'@clerk/nextjs'</span>;
+                            </div>
+                            <div class="terminal-prompt-line">
+                                <span class="text-mut">Apply changes? [Y/n]</span> <span class="hero-cursor" aria-hidden="true"></span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- CTA Section -->
+            <section id="install" class="cta-section reveal" aria-label="Installation">
+                <h2 class="cta-heading">Initialize Repository</h2>
+                <p class="cta-sub">Install globally via npm.</p>
+
+                <div class="install-box" role="group" aria-label="Install command">
+                    <div class="prompt-arrow" aria-hidden="true">&rarr;</div>
+                    <label for="install-cmd" class="sr-only">Install command</label>
+                    <input id="install-cmd" type="text" class="install-input" value="npm install -g aemeathcli" readonly aria-label="Install command: npm install -g aemeathcli">
+                    <button class="copy-btn" aria-label="Copy install command to clipboard">cp</button>
+                </div>
+            </section>
+
+            <!-- Footer -->
+            <footer class="shortcuts-bar" role="contentinfo">
+                <div class="key-group">
+                    <div><span class="key">g</span> to get started</div>
+                    <div><span class="key">d</span> for docs</div>
+                </div>
+                <div class="key-group">
+                    <div><span class="key">&uarr;</span> <span class="key">&darr;</span> for scroll</div>
+                    <div class="text-mut">&copy; 2025 AemeathCLI</div>
+                </div>
+            </footer>
+        </main>
+    </div>
+
+    <script>
+        /* -- Copy to Clipboard -- */
+        (function() {
+            var copyBtn = document.querySelector('.copy-btn');
+            var installInput = document.getElementById('install-cmd');
+
+            if (copyBtn && installInput) {
+                copyBtn.addEventListener('click', function() {
+                    var text = installInput.value;
+                    if (navigator.clipboard && navigator.clipboard.writeText) {
+                        navigator.clipboard.writeText(text).then(onCopied, fallbackCopy);
+                    } else {
+                        fallbackCopy();
+                    }
+                });
+            }
+
+            function fallbackCopy() {
+                installInput.select();
+                installInput.setSelectionRange(0, 99999);
+                document.execCommand('copy');
+                onCopied();
+            }
+
+            function onCopied() {
+                var original = copyBtn.textContent;
+                copyBtn.textContent = 'done';
+                setTimeout(function() {
+                    copyBtn.textContent = original;
+                }, 1500);
+            }
+        })();
+
+        /* -- Mobile Navigation -- */
+        (function() {
+            var hamburger = document.querySelector('.hamburger');
+            var overlay = document.getElementById('mobile-nav-overlay');
+            var closeBtn = document.querySelector('.mobile-nav-close');
+            var navLinks = overlay ? overlay.querySelectorAll('.nav-item') : [];
+
+            function openNav() {
+                overlay.classList.add('open');
+                hamburger.setAttribute('aria-expanded', 'true');
+                closeBtn.focus();
+            }
+
+            function closeNav() {
+                overlay.classList.remove('open');
+                hamburger.setAttribute('aria-expanded', 'false');
+                hamburger.focus();
+            }
+
+            if (hamburger) hamburger.addEventListener('click', openNav);
+            if (closeBtn) closeBtn.addEventListener('click', closeNav);
+            if (overlay) {
+                overlay.addEventListener('click', function(e) {
+                    if (e.target === overlay) closeNav();
+                });
+            }
+
+            navLinks.forEach(function(link) {
+                link.addEventListener('click', closeNav);
+            });
+
+            document.addEventListener('keydown', function(e) {
+                if (e.key === 'Escape' && overlay.classList.contains('open')) {
+                    closeNav();
+                }
+            });
+        })();
+
+        /* -- Active Nav Tracking -- */
+        (function() {
+            var sections = document.querySelectorAll('section[id]');
+            var navItems = document.querySelectorAll('.sidebar .nav-item, .mobile-nav .nav-item');
+
+            var observer = new IntersectionObserver(function(entries) {
+                entries.forEach(function(entry) {
+                    if (entry.isIntersecting) {
+                        var id = entry.target.getAttribute('id');
+                        navItems.forEach(function(item) {
+                            item.classList.toggle('active', item.getAttribute('href') === '#' + id);
+                        });
+                    }
+                });
+            }, { rootMargin: '-20% 0px -80% 0px' });
+
+            sections.forEach(function(section) { observer.observe(section); });
+        })();
+
+        /* -- Scroll Reveal -- */
+        (function() {
+            var reveals = document.querySelectorAll('.reveal');
+            var observer = new IntersectionObserver(function(entries) {
+                entries.forEach(function(entry) {
+                    if (entry.isIntersecting) {
+                        entry.target.classList.add('visible');
+                        observer.unobserve(entry.target);
+                    }
+                });
+            }, { threshold: 0.1 });
+
+            reveals.forEach(function(el) { observer.observe(el); });
+        })();
+    </script>
+</body>
+</html>

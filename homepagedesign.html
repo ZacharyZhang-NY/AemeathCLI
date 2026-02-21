@@ -1,0 +1,534 @@
+<html lang="en" vid="0"><head vid="1">
+    <meta charset="UTF-8" vid="2">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" vid="3">
+    <title vid="4">AemeathCLI - AI Terminal Copilot</title>
+    <style vid="5">
+        :root {
+            
+            --bg-root: #050505;
+            --bg-panel: #0a0a0a;
+            --border-dim: #262626;
+            --border-active: #404040;
+            
+            
+            --text-primary: #ededed;
+            --text-secondary: #888888;
+            --text-muted: #555555;
+            --accent-diff-bg: rgba(16, 185, 129, 0.1);
+            --accent-diff-text: #34d399;
+            --syntax-blue: #60a5fa;
+            --syntax-purple: #c084fc;
+            --syntax-string: #a5b4fc;
+            
+            
+            --space-unit: 1.5rem;
+            --grid-line: 1px solid var(--border-dim);
+            --mono-font: 'SF Mono', 'Fira Code', 'Roboto Mono', monospace;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        body {
+            background-color: var(--bg-root);
+            color: var(--text-primary);
+            font-family: var(--mono-font);
+            font-size: 14px;
+            line-height: 1.6;
+            overflow-x: hidden;
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+        }
+
+        
+        .flex { display: flex; }
+        .flex-col { flex-direction: column; }
+        .items-center { align-items: center; }
+        .justify-between { justify-content: space-between; }
+        .justify-center { justify-content: center; }
+        .text-sec { color: var(--text-secondary); }
+        .text-mut { color: var(--text-muted); }
+        .uppercase { text-transform: uppercase; letter-spacing: 0.05em; }
+        .w-full { width: 100%; }
+
+        
+        .main-grid {
+            display: grid;
+            grid-template-columns: 280px 1fr;
+            min-height: 100vh;
+            border-right: var(--grid-line);
+        }
+
+        @media (max-width: 1024px) {
+            .main-grid { grid-template-columns: 1fr; }
+            .sidebar { display: none; }
+        }
+
+        
+        .sidebar {
+            border-right: var(--grid-line);
+            padding: var(--space-unit);
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            position: sticky;
+            top: 0;
+            height: 100vh;
+        }
+
+        .brand {
+            font-size: 16px;
+            font-weight: 700;
+            margin-bottom: 2rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .brand span { color: var(--accent-diff-text); }
+
+        .nav-item {
+            display: block;
+            color: var(--text-secondary);
+            text-decoration: none;
+            padding: 8px 0;
+            transition: color 0.2s;
+            cursor: pointer;
+        }
+        .nav-item:hover { color: var(--text-primary); }
+        .nav-item.active { color: var(--accent-diff-text); }
+        .nav-item::before { content: '> '; opacity: 0; transition: opacity 0.2s; color: var(--accent-diff-text); }
+        .nav-item:hover::before { opacity: 1; }
+
+        
+        .content-area {
+            display: flex;
+            flex-direction: column;
+        }
+
+        
+        .hero {
+            padding: 4rem var(--space-unit);
+            border-bottom: var(--grid-line);
+            position: relative;
+        }
+
+        .status-line {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-bottom: 2rem;
+            display: flex;
+            gap: 1rem;
+        }
+
+        h1 {
+            font-size: clamp(2rem, 4vw, 3.5rem);
+            line-height: 1.1;
+            margin-bottom: 2rem;
+            max-width: 800px;
+            font-weight: 500;
+        }
+        
+        .hero-cursor {
+            display: inline-block;
+            width: 0.6em;
+            height: 1em;
+            background-color: var(--accent-diff-text);
+            animation: blink 1s step-end infinite;
+            vertical-align: middle;
+        }
+
+        @keyframes blink { 50% { opacity: 0; } }
+
+        
+        .terminal-window {
+            margin-top: 3rem;
+            border: var(--grid-line);
+            background: #000;
+        }
+
+        .terminal-header {
+            padding: 10px 16px;
+            border-bottom: var(--grid-line);
+            display: flex;
+            justify-content: space-between;
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        .code-block {
+            padding: 20px 0;
+            font-family: var(--mono-font);
+            font-size: 13px;
+            position: relative;
+        }
+
+        .line {
+            display: grid;
+            grid-template-columns: 60px 1fr;
+            line-height: 1.6;
+        }
+
+        .ln {
+            text-align: right;
+            padding-right: 20px;
+            color: var(--text-muted);
+            user-select: none;
+        }
+
+        .code {
+            color: var(--text-secondary);
+            white-space: pre;
+        }
+
+        
+        .line.add {
+            background-color: var(--accent-diff-bg);
+        }
+        .line.add .code {
+            color: var(--text-primary);
+        }
+        .line.add .ln {
+            color: var(--accent-diff-text);
+        }
+        .line.add .ln::before {
+            content: '+';
+            position: absolute;
+            left: 40px;
+            color: var(--accent-diff-text);
+        }
+
+        
+        .kwd { color: var(--syntax-purple); }
+        .str { color: var(--syntax-string); }
+        .fn { color: var(--syntax-blue); }
+        .tag { color: var(--syntax-blue); }
+        .attr { color: var(--text-secondary); }
+
+        
+        .features-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            border-bottom: var(--grid-line);
+        }
+
+        .feature-cell {
+            border-right: var(--grid-line);
+            border-bottom: var(--grid-line); 
+            padding: 2rem;
+            transition: background 0.2s;
+        }
+        .feature-cell:last-child { border-right: none; }
+        .feature-cell:hover {
+            background: #0a0a0a;
+        }
+
+        .feature-header {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-bottom: 1rem;
+            display: flex;
+            justify-content: space-between;
+        }
+        
+        .feature-title {
+            font-size: 16px;
+            margin-bottom: 0.5rem;
+            color: var(--text-primary);
+        }
+
+        .feature-desc {
+            color: var(--text-secondary);
+            font-size: 13px;
+            max-width: 90%;
+        }
+
+        
+        .cta-section {
+            padding: 4rem var(--space-unit);
+            border-bottom: var(--grid-line);
+        }
+
+        .install-box {
+            display: flex;
+            align-items: center;
+            border: var(--grid-line);
+            background: #000;
+            padding: 0;
+            max-width: 500px;
+            margin-top: 2rem;
+            transition: border-color 0.2s;
+        }
+        .install-box:focus-within {
+            border-color: var(--text-secondary);
+        }
+
+        .prompt-arrow {
+            padding: 16px;
+            color: var(--text-muted);
+            border-right: var(--grid-line);
+        }
+
+        .install-input {
+            background: transparent;
+            border: none;
+            color: var(--text-primary);
+            font-family: var(--mono-font);
+            font-size: 14px;
+            padding: 16px;
+            width: 100%;
+            outline: none;
+        }
+
+        .copy-btn {
+            padding: 0 16px;
+            color: var(--text-muted);
+            font-size: 12px;
+            cursor: pointer;
+            transition: color 0.2s;
+        }
+        .copy-btn:hover { color: var(--text-primary); }
+
+        
+        .shortcuts-bar {
+            padding: 1rem var(--space-unit);
+            border-top: var(--grid-line);
+            display: flex;
+            justify-content: space-between;
+            font-size: 12px;
+            color: var(--text-muted);
+            background: var(--bg-root);
+        }
+
+        .key-group {
+            display: flex;
+            gap: 1.5rem;
+        }
+
+        .key {
+            color: var(--text-primary);
+            margin-right: 4px;
+        }
+
+        
+        .hidden { display: none; }
+        
+        
+        .line:hover {
+            background-color: rgba(255, 255, 255, 0.03);
+        }
+        .line.add:hover {
+            background-color: rgba(16, 185, 129, 0.15);
+        }
+
+    </style>
+</head>
+<body vid="6">
+
+    <div class="main-grid" vid="7">
+        
+        <aside class="sidebar" vid="8">
+            <div vid="9">
+                <div class="brand" vid="10">
+                    <span vid="11">◆</span> AemeathCLI
+                </div>
+                <nav vid="12">
+                    <a href="#" class="nav-item active" vid="13">1. Overview</a>
+                    <a href="#" class="nav-item" vid="14">2. Integrations</a>
+                    <a href="#" class="nav-item" vid="15">3. Diff Engine</a>
+                    <a href="#" class="nav-item" vid="16">4. Pricing</a>
+                </nav>
+            </div>
+            
+            <div style="color: var(--text-muted); font-size: 12px;" vid="17">
+                <div vid="18">v2.0.4 stable</div>
+                <div style="margin-top: 8px;" vid="19">Waiting for input...</div>
+            </div>
+        </aside>
+
+        
+        <main class="content-area" vid="20">
+            
+            
+            <section class="hero" vid="21">
+                <div class="status-line" vid="22">
+                    <span vid="23">3 files detected</span>
+                    <span vid="24">src/core/engine.ts</span>
+                </div>
+
+                <h1 vid="25">
+                    ITERATE FASTER.<br vid="26">
+                    <span style="color: var(--text-secondary)" vid="27">NEVER LEAVE YOUR TERMINAL.</span><span class="hero-cursor" vid="28"></span>
+                </h1>
+
+                
+                <div class="terminal-window" vid="29">
+                    <div class="terminal-header" vid="30">
+                        <span vid="31">src/components/Refactor.tsx</span>
+                        <span vid="32">esc when done</span>
+                    </div>
+                    <div class="code-block" vid="33">
+                        <div class="line" vid="34">
+                            <span class="ln" vid="35">102</span>
+                            <span class="code" vid="36"><span class="kwd" vid="37">export const</span> <span class="fn" vid="38">Optimize</span> = ({ <span class="attr" vid="39">state</span> }) =&gt; {</span>
+                        </div>
+                        <div class="line" vid="40">
+                            <span class="ln" vid="41">103</span>
+                            <span class="code" vid="42">  <span class="kwd" vid="43">const</span> engine = <span class="fn" vid="44">useContext</span>(DiffContext);</span>
+                        </div>
+                        
+                        <div class="line add" vid="45">
+                            <span class="ln" vid="46">104</span>
+                            <span class="code" vid="47">  <span class="kwd" vid="48">const</span> memoizedResult = <span class="fn" vid="49">useMemo</span>(() =&gt; {</span>
+                        </div>
+                        <div class="line add" vid="50">
+                            <span class="ln" vid="51">105</span>
+                            <span class="code" vid="52">    <span class="kwd" vid="53">return</span> engine.<span class="fn" vid="54">compute</span>(state, { <span class="attr" vid="55">depth</span>: <span class="str" vid="56">'deep'</span> });</span>
+                        </div>
+                        <div class="line add" vid="57">
+                            <span class="ln" vid="58">106</span>
+                            <span class="code" vid="59">  }, [state, engine]);</span>
+                        </div>
+                        <div class="line" vid="60">
+                            <span class="ln" vid="61">107</span>
+                            <span class="code" vid="62">  <span class="kwd" vid="63">return</span> <span class="tag" vid="64"><display< span="" vid="65"> <span class="attr" vid="66">val</span>={memoizedResult} <span class="tag" vid="67">/&gt;</span>;</display<></span>
+                        </span></div>
+                        <div class="line" vid="68">
+                            <span class="ln" vid="69">108</span>
+                            <span class="code" vid="70">}</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            
+            <section class="features-grid" vid="71">
+                <div class="feature-cell" vid="72">
+                    <div class="feature-header" vid="73">
+                        <span vid="74">01</span>
+                        <span vid="75">[ ]</span>
+                    </div>
+                    <div class="feature-title" vid="76">Semantic Awareness</div>
+                    <div class="feature-desc" vid="77">Analyzes your entire dependency graph before suggesting changes.</div>
+                </div>
+                <div class="feature-cell" vid="78">
+                    <div class="feature-header" vid="79">
+                        <span vid="80">02</span>
+                        <span vid="81">[x]</span>
+                    </div>
+                    <div class="feature-title" vid="82">Vim Mode Support</div>
+                    <div class="feature-desc" vid="83">Native bindings for hjkl navigation within suggestions.</div>
+                </div>
+                <div class="feature-cell" vid="84">
+                    <div class="feature-header" vid="85">
+                        <span vid="86">03</span>
+                        <span vid="87">[ ]</span>
+                    </div>
+                    <div class="feature-title" vid="88">Local Execution</div>
+                    <div class="feature-desc" vid="89">Models run locally via Ollama or LM Studio bindings.</div>
+                </div>
+            </section>
+
+            
+            <section style="padding: 4rem var(--space-unit); border-bottom: var(--grid-line);" vid="90">
+                <div class="status-line" vid="91">
+                    <span vid="92">&gt; diff output</span>
+                </div>
+                
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 2rem;" vid="93">
+                    <div vid="94">
+                        <h3 class="feature-title" style="margin-bottom: 1.5rem;" vid="95">Natural Language Refactoring</h3>
+                        <p class="text-sec" style="margin-bottom: 2rem;" vid="96">
+                            Describe your intent in plain English directly in the CLI. Aemeath parses the AST and applies transformations safely.
+                        </p>
+                        
+                        
+                        <div style="border-top: var(--grid-line);" vid="97">
+                            <div style="padding: 1rem 0; border-bottom: var(--grid-line); display:flex; gap:1rem; align-items:center;" vid="98">
+                                <span style="color:var(--accent-diff-text)" vid="99">$</span>
+                                <span vid="100">refactor auth.ts to use Clerk</span>
+                            </div>
+                            <div style="padding: 1rem 0; border-bottom: var(--grid-line); display:flex; gap:1rem; align-items:center;" vid="101">
+                                <span style="color:var(--accent-diff-text)" vid="102">$</span>
+                                <span vid="103">optimize image loading in Hero.tsx</span>
+                            </div>
+                            <div style="padding: 1rem 0; border-bottom: var(--grid-line); display:flex; gap:1rem; align-items:center;" vid="104">
+                                <span style="color:var(--accent-diff-text)" vid="105">$</span>
+                                <span vid="106">generate unit tests for utils/*</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    
+                    <div style="border: var(--grid-line); background: #000; padding: 1.5rem;" vid="107">
+                         <div style="margin-bottom: 1rem; color: var(--text-muted); font-size: 12px;" vid="108">Terminal Output</div>
+                         <div style="font-size: 13px; color: var(--text-secondary);" vid="109">
+                            <div vid="110">&gt; Analyzing AST... <span style="color: var(--accent-diff-text)" vid="111">Done (40ms)</span></div>
+                            <div vid="112">&gt; Identifying dependencies... <span style="color: var(--accent-diff-text)" vid="113">Done</span></div>
+                            <div style="margin-top: 1rem; color: var(--text-primary);" vid="114">Suggested Refactor:</div>
+                            <div style="margin-top: 0.5rem; padding-left: 1rem; border-left: 2px solid var(--border-active);" vid="115">
+                                <span style="color: var(--syntax-purple)" vid="116">import</span> { ClerkProvider } <span style="color: var(--syntax-purple)" vid="117">from</span> <span style="color: var(--syntax-string)" vid="118">'@clerk/nextjs'</span>;
+                            </div>
+                            <div style="margin-top: 1rem;" vid="119">
+                                <span class="text-mut" vid="120">Apply changes? [Y/n]</span> <span class="hero-cursor" vid="121"></span>
+                            </div>
+                         </div>
+                    </div>
+                </div>
+            </section>
+
+            
+            <section class="cta-section" vid="122">
+                <h2 style="font-weight: 500; font-size: 24px;" vid="123">Initialize Repository</h2>
+                <div class="text-sec" style="margin-top: 0.5rem;" vid="124">Install globally via npm or brew.</div>
+
+                <div class="install-box" vid="125">
+                    <div class="prompt-arrow" vid="126">→</div>
+                    <input type="text" class="install-input" value="npm install -g aemeath-cli" readonly="" vid="127">
+                    <div class="copy-btn" vid="128">cp</div>
+                </div>
+            </section>
+
+            
+            <footer class="shortcuts-bar" vid="129">
+                <div class="key-group" vid="130">
+                    <div vid="131"><span class="key" vid="132">g</span> to get started</div>
+                    <div vid="133"><span class="key" vid="134">d</span> for docs</div>
+                </div>
+                <div class="key-group" vid="135">
+                    <div vid="136"><span class="key" vid="137">↑</span> <span class="key" vid="138">↓</span> for scroll</div>
+                    <div class="text-mut" vid="139">© 2024 Aemeath Inc.</div>
+                </div>
+            </footer>
+
+        </main>
+    </div>
+
+    <script vid="140">
+        
+        document.querySelector('.install-box').addEventListener('click', function() {
+            const input = this.querySelector('input');
+            input.select();
+            document.execCommand('copy');
+            
+            const btn = this.querySelector('.copy-btn');
+            const originalText = btn.innerText;
+            btn.innerText = 'copied!';
+            setTimeout(() => {
+                btn.innerText = originalText;
+            }, 1500);
+        });
+
+        
+        document.querySelectorAll('.line').forEach(line => {
+            line.addEventListener('mouseenter', () => {
+                
+            });
+        });
+    </script>
+
+</body></html>
