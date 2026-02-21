@@ -15,7 +15,7 @@
     <meta property="og:url" content="https://aemeathcli.pages.dev">
     <meta property="og:site_name" content="AemeathCLI">
 
-    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:card" content="summary">
     <meta name="twitter:title" content="AemeathCLI - Multi-Model CLI Coding Tool">
     <meta name="twitter:description" content="Orchestrate multiple AI models across parallel agent teams in your terminal.">
 
@@ -46,7 +46,7 @@
             --border-active: #404040;
             --text-primary: #ededed;
             --text-secondary: #888888;
-            --text-muted: #555555;
+            --text-muted: #767676;
             --accent-diff-bg: rgba(16, 185, 129, 0.1);
             --accent-diff-text: #34d399;
             --syntax-function: #60a5fa;
@@ -174,7 +174,8 @@
             background: none;
             border: var(--grid-line);
             color: var(--text-secondary);
-            padding: 8px 12px;
+            padding: 14px 16px;
+            min-height: 48px;
             cursor: pointer;
             font-family: var(--mono-font);
             font-size: 14px;
@@ -229,14 +230,21 @@
             font-size: 14px;
             cursor: pointer;
             align-self: flex-end;
-            padding: 4px;
+            padding: 12px;
+            min-height: 48px;
+            min-width: 48px;
         }
 
         .mobile-nav-close:hover { color: var(--text-primary); }
 
+        .mobile-nav-close:focus-visible {
+            outline: 2px solid var(--accent-diff-text);
+            outline-offset: 2px;
+        }
+
         .mobile-nav .nav-item {
             font-size: 16px;
-            padding: 12px 0;
+            padding: 16px 0;
         }
 
         /* -- Content Area -- */
@@ -567,7 +575,7 @@
             width: 1px;
             height: 1px;
             overflow: hidden;
-            clip: rect(0, 0, 0, 0);
+            clip-path: inset(50%);
             white-space: nowrap;
             border: 0;
         }
@@ -667,7 +675,7 @@
     </header>
 
     <!-- Mobile Navigation Overlay -->
-    <div id="mobile-nav-overlay" class="mobile-nav-overlay" role="dialog" aria-label="Navigation menu">
+    <div id="mobile-nav-overlay" class="mobile-nav-overlay" role="dialog" aria-modal="true" aria-label="Navigation menu">
         <div class="mobile-nav">
             <button class="mobile-nav-close" aria-label="Close navigation menu">[x]</button>
             <nav aria-label="Mobile navigation">
@@ -718,7 +726,7 @@
                 </h1>
 
                 <!-- Terminal Window -->
-                <div class="terminal-window reveal">
+                <div class="terminal-window">
                     <div class="terminal-header">
                         <span>src/components/Refactor.tsx</span>
                         <span>esc when done</span>
@@ -838,24 +846,25 @@
                 <div class="install-box" role="group" aria-label="Install command">
                     <div class="prompt-arrow" aria-hidden="true">&rarr;</div>
                     <label for="install-cmd" class="sr-only">Install command</label>
-                    <input id="install-cmd" type="text" class="install-input" value="npm install -g aemeathcli" readonly aria-label="Install command: npm install -g aemeathcli">
+                    <input id="install-cmd" type="text" class="install-input" value="npm install -g aemeathcli" readonly>
                     <button class="copy-btn" aria-label="Copy install command to clipboard">cp</button>
                 </div>
             </section>
 
-            <!-- Footer -->
-            <footer class="shortcuts-bar" role="contentinfo">
-                <div class="key-group">
-                    <div><span class="key">g</span> to get started</div>
-                    <div><span class="key">d</span> for docs</div>
-                </div>
-                <div class="key-group">
-                    <div><span class="key">&uarr;</span> <span class="key">&darr;</span> for scroll</div>
-                    <div class="text-mut">&copy; 2026 AemeathCLI</div>
-                </div>
-            </footer>
         </main>
     </div>
+
+    <!-- Footer -->
+    <footer class="shortcuts-bar" role="contentinfo">
+        <div class="key-group">
+            <div><span class="key">g</span> to get started</div>
+            <div><span class="key">d</span> for docs</div>
+        </div>
+        <div class="key-group">
+            <div><span class="key">&uarr;</span> <span class="key">&darr;</span> for scroll</div>
+            <div class="text-mut">&copy; 2026 AemeathCLI</div>
+        </div>
+    </footer>
 
     <script>
         /* -- Copy to Clipboard -- */
@@ -924,6 +933,24 @@
             document.addEventListener('keydown', function(e) {
                 if (e.key === 'Escape' && overlay.classList.contains('open')) {
                     closeNav();
+                    return;
+                }
+                /* Focus trap: keep Tab cycling within the open dialog */
+                if (e.key === 'Tab' && overlay.classList.contains('open')) {
+                    var focusable = overlay.querySelectorAll('button, a[href]');
+                    var first = focusable[0];
+                    var last = focusable[focusable.length - 1];
+                    if (e.shiftKey) {
+                        if (document.activeElement === first) {
+                            e.preventDefault();
+                            last.focus();
+                        }
+                    } else {
+                        if (document.activeElement === last) {
+                            e.preventDefault();
+                            first.focus();
+                        }
+                    }
                 }
             });
         })();
