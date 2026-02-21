@@ -36,6 +36,7 @@ import { v4Id } from "./utils.js";
 import { SLASH_COMMANDS } from "./autocomplete-data.js";
 import { ModelSelector } from "./components/ModelSelector.js";
 import { ThinkingSelector } from "./components/ThinkingSelector.js";
+import { LoginSelector } from "./components/LoginSelector.js";
 
 interface IChatSessionOptions {
   readonly initialMessage?: string | undefined;
@@ -80,7 +81,8 @@ function getCandidateModels(
 type SelectionMode =
   | { readonly type: "none" }
   | { readonly type: "model" }
-  | { readonly type: "thinking"; readonly modelId: string };
+  | { readonly type: "thinking"; readonly modelId: string }
+  | { readonly type: "login" };
 
 function App({ config, options }: IAppProps): React.ReactElement {
   const { resolution, modelId, switchModel, switchRole } = useModel(
@@ -383,7 +385,39 @@ function App({ config, options }: IAppProps): React.ReactElement {
     setSelectionMode({ type: "none" });
   }, []);
 
+  const handleLoginSelected = useCallback(async (provider: string) => {
+    setSelectionMode({ type: "none" });
+    setMessages((prev) => [
+      ...prev,
+      { id: v4Id(), role: "system" as const, content: `Logging in to ${provider}...`, createdAt: new Date() },
+    ]);
+
+    try {
+      const loginModule = await loadLoginModuleForSlash(provider as "claude" | "codex" | "gemini" | "kimi");
+      await loginModule.login();
+      setMessages((prev) => [
+        ...prev,
+        { id: v4Id(), role: "system" as const, content: `Successfully logged in to ${provider}`, createdAt: new Date() },
+      ]);
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error);
+      setMessages((prev) => [
+        ...prev,
+        { id: v4Id(), role: "system" as const, content: `Login failed: ${msg}`, createdAt: new Date() },
+      ]);
+    }
+  }, []);
+
   // ── Selection mode renders take priority over normal views ──────────────
+
+  if (selectionMode.type === "login") {
+    return (
+      <LoginSelector
+        onSelect={(provider) => void handleLoginSelected(provider)}
+        onCancel={handleSelectionCancel}
+      />
+    );
+  }
 
   if (selectionMode.type === "model") {
     return (
@@ -621,8 +655,8 @@ async function handleInternalCommand(
       break;
     }
 
-    case "/auth":
-      await handleAuthSlashCommand(args, ctx);
+    case "/login":
+      await handleLoginSlashCommand(args, ctx);
       break;
 
     case "/config":
@@ -1602,9 +1636,9 @@ async function handleSkillCommand(args: readonly string[], ctx: ICommandContext)
   addSystemMessage(ctx, "Usage: /skill list\nInvoke a skill with $skill-name (e.g., $review, $commit, $plan)");
 }
 
-// ── Auth Slash Command Handler ───────────────────────────────────────────
+// ── Login Slash Command Handler ──────────────────────────────────────────
 
-async function handleAuthSlashCommand(args: readonly string[], ctx: ICommandContext): Promise<void> {
+async function handleLoginSlashCommand(args: readonly string[], ctx: ICommandContext): Promise<void> {
   const subcommand = args[0];
 
   if (subcommand === "status") {
@@ -1632,30 +1666,30 @@ async function handleAuthSlashCommand(args: readonly string[], ctx: ICommandCont
     return;
   }
 
-  if (subcommand === "login") {
-    const provider = args[1];
-    if (!provider) {
-      addSystemMessage(ctx, "Usage: /auth login <provider>\nProviders: claude, codex, gemini, kimi");
-      return;
-    }
-    addSystemMessage(ctx, `Use the CLI command: aemeathcli auth login ${provider}`);
-    return;
-  }
-
   if (subcommand === "logout") {
     const provider = args[1];
     if (!provider) {
-      addSystemMessage(ctx, "Usage: /auth logout <provider>\nProviders: claude, codex, gemini, kimi");
+      addSystemMessage(ctx, "Usage: /login logout <provider>\nProviders: claude, codex, gemini, kimi");
       return;
     }
-    addSystemMessage(ctx, `Use the CLI command: aemeathcli auth logout ${provider}`);
+    try {
+      const loginMod = await loadLoginModuleForSlash(provider as "claude" | "codex" | "gemini" | "kimi");
+      await loginMod.logout();
+      addSystemMessage(ctx, `Logged out of ${provider}`);
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error);
+      addSystemMessage(ctx, `Logout failed: ${msg}`);
+    }
     return;
   }
 
-  addSystemMessage(ctx, "Usage: /auth status | /auth login <provider> | /auth logout <provider>");
+  // No subcommand → open interactive provider selector
+  ctx.setSelectionMode({ type: "login" });
 }
 
 interface ISlashLoginModule {
+  login(): Promise<unknown>;
+  logout(): Promise<void>;
   getStatus(): Promise<{ loggedIn: boolean; email?: string | undefined; plan?: string | undefined }>;
 }
 

@@ -4,6 +4,7 @@
 
 import { Command } from "commander";
 import pc from "picocolors";
+import { select } from "@inquirer/prompts";
 import type { ProviderName } from "../../types/index.js";
 
 const VALID_PROVIDERS = ["claude", "codex", "gemini", "kimi"] as const;
@@ -19,6 +20,55 @@ const PROVIDER_MODEL_SWITCH: Readonly<Record<LoginProvider, { provider: Provider
   gemini: { provider: "google", model: "gemini-2.5-pro" },
   kimi: { provider: "kimi", model: "kimi-for-coding" },
 };
+
+/**
+ * Top-level `login` command with interactive provider selection.
+ * Shows an arrow-key navigable list of providers, then triggers
+ * browser-based login for the selected one.
+ */
+export function createLoginCommand(): Command {
+  return new Command("login")
+    .description("Log in to a provider (interactive)")
+    .argument("[provider]", "Provider to log in to (claude, codex, gemini, kimi)")
+    .action(async (providerArg: string | undefined) => {
+      let provider: LoginProvider;
+
+      if (providerArg !== undefined) {
+        // Direct invocation: `aemeathcli login claude`
+        if (!isValidProvider(providerArg)) {
+          process.stderr.write(
+            pc.red(`Unknown provider: "${providerArg}". Valid: ${VALID_PROVIDERS.join(", ")}\n`),
+          );
+          process.exitCode = 2;
+          return;
+        }
+        provider = providerArg;
+      } else {
+        // Interactive selection
+        provider = await select<LoginProvider>({
+          message: "Select a provider to log in to:",
+          choices: [
+            { name: "Claude  (Anthropic)", value: "claude" },
+            { name: "Codex   (OpenAI)", value: "codex" },
+            { name: "Gemini  (Google)", value: "gemini" },
+            { name: "Kimi    (Moonshot)", value: "kimi" },
+          ],
+        });
+      }
+
+      process.stdout.write(pc.cyan(`\nLogging in to ${provider}...\n`));
+
+      try {
+        const loginModule = await loadLoginModule(provider);
+        await loginModule.login();
+        process.stdout.write(pc.green(`Successfully logged in to ${provider}\n`));
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        process.stderr.write(pc.red(`Login failed: ${message}\n`));
+        process.exitCode = 3;
+      }
+    });
+}
 
 export function createAuthCommand(): Command {
   const auth = new Command("auth")

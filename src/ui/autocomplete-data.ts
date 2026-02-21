@@ -16,6 +16,7 @@ export interface ISlashCommand {
 }
 
 export const SLASH_COMMANDS: readonly ISlashCommand[] = [
+  { command: "/login", description: "Log in to a provider (interactive)" },
   { command: "/help", description: "Show available commands" },
   { command: "/model", description: "Select a model with provider-specific thinking options" },
   { command: "/role", description: "Switch role (planning, coding, review, testing, bugfix)" },
@@ -28,9 +29,8 @@ export const SLASH_COMMANDS: readonly ISlashCommand[] = [
   { command: "/mcp add", description: "Add an MCP server" },
   { command: "/skill list", description: "List available skills" },
   { command: "/panel", description: "Change split-panel layout" },
-  { command: "/auth login", description: "Log in to a provider (claude, codex, gemini, kimi)" },
-  { command: "/auth status", description: "Show login status for all providers" },
-  { command: "/auth logout", description: "Log out of a provider" },
+  { command: "/login status", description: "Show login status for all providers" },
+  { command: "/login logout", description: "Log out of a provider" },
   { command: "/config get", description: "Get a configuration value" },
   { command: "/config set", description: "Set a configuration value" },
   { command: "/quit", description: "Exit" },

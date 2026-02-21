@@ -13,7 +13,7 @@ import { createPlanCommand } from "./commands/plan.js";
 import { createReviewCommand } from "./commands/review.js";
 import { createTestCommand } from "./commands/test.js";
 import { createConfigCommand } from "./commands/config.js";
-import { createAuthCommand } from "./commands/auth.js";
+import { createAuthCommand, createLoginCommand } from "./commands/auth.js";
 import { initializeDirectories } from "../utils/index.js";
 import { logger } from "../utils/index.js";
 import type { IIPCMessage } from "../types/index.js";
@@ -347,6 +347,7 @@ async function main(): Promise<void> {
   program.addCommand(createTestCommand());
   program.addCommand(createConfigCommand());
   program.addCommand(createAuthCommand());
+  program.addCommand(createLoginCommand());
 
   // Default action (no subcommand) — start interactive chat
   program.action(async (options: Record<string, unknown>, command: Command) => {
