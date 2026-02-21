@@ -387,9 +387,14 @@ function App({ config, options }: IAppProps): React.ReactElement {
 
   const handleLoginSelected = useCallback(async (provider: string) => {
     setSelectionMode({ type: "none" });
+
+    const loginMsg = provider === "gemini"
+      ? "Logging in to gemini... A new terminal window will open for authentication."
+      : `Logging in to ${provider}...`;
+
     setMessages((prev) => [
       ...prev,
-      { id: v4Id(), role: "system" as const, content: `Logging in to ${provider}...`, createdAt: new Date() },
+      { id: v4Id(), role: "system" as const, content: loginMsg, createdAt: new Date() },
     ]);
 
     try {

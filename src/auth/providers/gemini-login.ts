@@ -1,11 +1,11 @@
 /**
  * Gemini (Google) delegated authentication
  * Reads cached credentials from ~/.gemini/oauth_creds.json (shared with the Gemini CLI).
- * If not authenticated, instructs the user to run `gemini` in a separate terminal
- * since the Gemini CLI has no `login` subcommand and requires interactive terminal consent.
+ * If not authenticated, opens a new terminal window running `gemini` for interactive login,
+ * then polls for credentials to appear.
  */
 
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync, existsSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { execa } from "execa";
@@ -17,6 +17,8 @@ import { logger } from "../../utils/index.js";
 // ── Gemini CLI Token Paths ──────────────────────────────────────────────
 
 const CLI_COMMAND = "gemini";
+const LOGIN_POLL_INTERVAL_MS = 2_000;
+const LOGIN_POLL_TIMEOUT_MS = 120_000;
 
 function getGeminiHome(): string {
   return process.env["GEMINI_HOME"] ?? join(homedir(), ".gemini");
@@ -65,6 +67,15 @@ function readGoogleAccounts(): IGoogleAccounts | undefined {
   }
 }
 
+function getCredsMtime(): number {
+  const credsPath = getOAuthCredsPath();
+  try {
+    return statSync(credsPath).mtimeMs;
+  } catch {
+    return 0;
+  }
+}
+
 function extractEmailFromIdToken(idToken: string): string | undefined {
   try {
     const payload = idToken.split(".")[1];
@@ -73,6 +84,61 @@ function extractEmailFromIdToken(idToken: string): string | undefined {
     return decoded.email;
   } catch {
     return undefined;
+  }
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// ── Open a new terminal window cross-platform ───────────────────────────
+
+async function openTerminalWithGemini(): Promise<void> {
+  const platform = process.platform;
+
+  if (platform === "win32") {
+    // Windows: open a new PowerShell window running gemini
+    await execa("cmd", ["/c", "start", "powershell", "-NoExit", "-Command", "gemini"], {
+      stdin: "ignore",
+      stdout: "ignore",
+      stderr: "ignore",
+    });
+  } else if (platform === "darwin") {
+    // macOS: open a new Terminal.app window running gemini
+    await execa("osascript", [
+      "-e",
+      'tell application "Terminal" to do script "gemini"',
+      "-e",
+      'tell application "Terminal" to activate',
+    ], {
+      stdin: "ignore",
+      stdout: "ignore",
+      stderr: "ignore",
+    });
+  } else {
+    // Linux: try common terminal emulators
+    const terminals = [
+      { cmd: "gnome-terminal", args: ["--", "gemini"] },
+      { cmd: "konsole", args: ["-e", "gemini"] },
+      { cmd: "xfce4-terminal", args: ["-e", "gemini"] },
+      { cmd: "xterm", args: ["-e", "gemini"] },
+    ];
+
+    for (const terminal of terminals) {
+      try {
+        await execa(terminal.cmd, terminal.args, {
+          stdin: "ignore",
+          stdout: "ignore",
+          stderr: "ignore",
+          detached: true,
+        });
+        return;
+      } catch {
+        // Try next terminal
+      }
+    }
+
+    throw new Error("Could not find a terminal emulator. Please run `gemini` manually in a separate terminal.");
   }
 }
 
@@ -87,9 +153,8 @@ export class GeminiLogin {
 
   /**
    * Attempt to import credentials from the Gemini CLI cache.
-   * The Gemini CLI has no `login` subcommand and requires interactive terminal
-   * consent, so it cannot be spawned from within the TUI. If no credentials
-   * are found, instruct the user to run `gemini` in a separate terminal first.
+   * If not found, opens a new terminal window running `gemini` for interactive
+   * login, then polls for credentials to appear in ~/.gemini/oauth_creds.json.
    */
   async login(): Promise<ICredential> {
     // Try importing existing credentials from Gemini CLI's cache
@@ -111,17 +176,34 @@ export class GeminiLogin {
         "google",
         "Gemini CLI not found. Install it first:\n" +
         "  npm install -g @google/gemini-cli\n" +
-        "Then run `gemini` in your terminal to authenticate.",
+        "Then retry /login.",
       );
     }
 
-    // Gemini CLI requires interactive terminal consent — cannot be spawned from the TUI.
-    throw new AuthenticationError(
-      "google",
-      "Gemini CLI requires interactive login.\n" +
-      "Please run `gemini` in a separate terminal to authenticate first,\n" +
-      "then retry /login here to import the credentials.",
-    );
+    // Record the current mtime so we can detect new credentials
+    const beforeMtime = getCredsMtime();
+
+    // Open a new terminal window running gemini for interactive login
+    logger.info("Opening new terminal window for Gemini login");
+    try {
+      await openTerminalWithGemini();
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error);
+      throw new AuthenticationError("google", msg);
+    }
+
+    // Poll for credentials to appear (user authenticates in the other window)
+    const credential = await this.pollForCredentials(beforeMtime);
+    if (!credential) {
+      throw new AuthenticationError(
+        "google",
+        "Login timed out. Please complete authentication in the Gemini terminal, then retry /login.",
+      );
+    }
+
+    await this.credentialStore.set("google", credential);
+    logger.info("Gemini credentials imported successfully");
+    return credential;
   }
 
   async logout(): Promise<void> {
@@ -189,12 +271,32 @@ export class GeminiLogin {
     };
   }
 
+  /**
+   * Poll for new credentials to appear in ~/.gemini/oauth_creds.json.
+   * Detects new credentials by checking if the file mtime changed from beforeMtime.
+   */
+  private async pollForCredentials(beforeMtime: number): Promise<ICredential | undefined> {
+    const deadline = Date.now() + LOGIN_POLL_TIMEOUT_MS;
+
+    while (Date.now() < deadline) {
+      await sleep(LOGIN_POLL_INTERVAL_MS);
+
+      const currentMtime = getCredsMtime();
+      if (currentMtime > beforeMtime) {
+        const credential = this.readCachedCredential();
+        if (credential) return credential;
+      }
+    }
+
+    // One final check
+    return this.readCachedCredential() ?? undefined;
+  }
+
   private async isCliAvailable(): Promise<boolean> {
     try {
       await execa(CLI_COMMAND, ["--help"], { timeout: 5000, stdin: "ignore", stdout: "ignore", stderr: "ignore" });
       return true;
     } catch (error: unknown) {
-      // ENOENT means CLI not found; any other error means it exists
       const code = (error as { code?: string }).code;
       return code !== "ENOENT";
     }
