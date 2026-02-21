@@ -77,7 +77,10 @@ export class KimiLogin {
     if (!cliAvailable) {
       throw new AuthenticationError(
         "kimi",
-        "Kimi CLI not found. Install it first: npm install -g @anthropic-ai/kimi-cli\n" +
+        "Kimi CLI not found. Install it first:\n" +
+        (process.platform === "win32"
+          ? "  irm https://code.kimi.com/install.ps1 | iex\n"
+          : "  curl -L code.kimi.com/install.sh | bash\n") +
         "Or set an API key: aemeathcli auth set-key kimi <key>",
       );
     }
@@ -187,7 +190,8 @@ export class KimiLogin {
 
   private async isCliAvailable(): Promise<boolean> {
     try {
-      await execFileAsync("which", [CLI_COMMAND], { timeout: 3000 });
+      const cmd = process.platform === "win32" ? "where" : "which";
+      await execFileAsync(cmd, [CLI_COMMAND], { timeout: 3000 });
       return true;
     } catch {
       return false;

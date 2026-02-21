@@ -95,7 +95,8 @@ export class CodexLogin {
     if (!cliAvailable) {
       throw new AuthenticationError(
         "openai",
-        "Codex CLI not found. Install it first: npm install -g @openai/codex\n" +
+        "Codex CLI not found. Install it first:\n" +
+        "  npm install -g @openai/codex\n" +
         "Or set an API key: aemeathcli auth set-key codex <key>",
       );
     }
@@ -208,7 +209,8 @@ export class CodexLogin {
 
   private async isCliAvailable(): Promise<boolean> {
     try {
-      await execFileAsync("which", [CLI_COMMAND], { timeout: 3000 });
+      const cmd = process.platform === "win32" ? "where" : "which";
+      await execFileAsync(cmd, [CLI_COMMAND], { timeout: 3000 });
       return true;
     } catch {
       return false;

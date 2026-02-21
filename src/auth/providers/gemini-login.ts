@@ -108,7 +108,8 @@ export class GeminiLogin {
     if (!cliAvailable) {
       throw new AuthenticationError(
         "google",
-        "Gemini CLI not found. Install it first: npm install -g @anthropic-ai/gemini-cli\n" +
+        "Gemini CLI not found. Install it first:\n" +
+        "  npm install -g @google/gemini-cli\n" +
         "Or set an API key: aemeathcli auth set-key gemini <key>",
       );
     }
@@ -214,7 +215,8 @@ export class GeminiLogin {
 
   private async isCliAvailable(): Promise<boolean> {
     try {
-      await execFileAsync("which", [CLI_COMMAND], { timeout: 3000 });
+      const cmd = process.platform === "win32" ? "where" : "which";
+      await execFileAsync(cmd, [CLI_COMMAND], { timeout: 3000 });
       return true;
     } catch {
       return false;
