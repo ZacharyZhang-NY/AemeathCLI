@@ -4,17 +4,14 @@
  * After login, reads cached tokens from ~/.codex/auth.json.
  */
 
-import { execFile, spawn } from "node:child_process";
-import { promisify } from "node:util";
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
+import { execa } from "execa";
 import type { ICredential } from "../../types/index.js";
 import { AuthenticationError } from "../../types/index.js";
 import { CredentialStore } from "../credential-store.js";
 import { logger } from "../../utils/index.js";
-
-const execFileAsync = promisify(execFile);
 
 // ── Codex CLI Token Paths ───────────────────────────────────────────────
 
@@ -196,31 +193,17 @@ export class CodexLogin {
     return undefined;
   }
 
-  private spawnInteractive(command: string, args: readonly string[]): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const child = spawn(command, [...args], {
-        stdio: "inherit",
-        timeout: 300_000,
-        shell: process.platform === "win32",
-      });
-      child.on("close", (code) => {
-        if (code === 0) resolve();
-        else reject(new Error(`Process exited with code ${String(code)}`));
-      });
-      child.on("error", reject);
-    });
+  private async spawnInteractive(command: string, args: readonly string[]): Promise<void> {
+    await execa(command, [...args], { stdio: "inherit", timeout: 300_000 });
   }
 
   private async isCliAvailable(): Promise<boolean> {
     try {
-      const cmd = process.platform === "win32" ? "where" : "which";
-      await execFileAsync(cmd, [CLI_COMMAND], {
-        timeout: 3000,
-        shell: process.platform === "win32",
-      });
+      await execa(CLI_COMMAND, ["--help"], { timeout: 5000, stdin: "ignore", stdout: "ignore", stderr: "ignore" });
       return true;
-    } catch {
-      return false;
+    } catch (error: unknown) {
+      const code = (error as { code?: string }).code;
+      return code !== "ENOENT";
     }
   }
 }

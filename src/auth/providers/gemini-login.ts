@@ -1,20 +1,18 @@
 /**
  * Gemini (Google) delegated authentication
- * Spawns `gemini login` which opens the browser automatically for Google login.
- * After login, reads cached tokens from ~/.gemini/oauth_creds.json.
+ * Reads cached credentials from ~/.gemini/oauth_creds.json (shared with the Gemini CLI).
+ * If not authenticated, instructs the user to run `gemini` in a separate terminal
+ * since the Gemini CLI has no `login` subcommand and requires interactive terminal consent.
  */
 
-import { execFile, spawn } from "node:child_process";
-import { promisify } from "node:util";
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
+import { execa } from "execa";
 import type { ICredential } from "../../types/index.js";
 import { AuthenticationError } from "../../types/index.js";
 import { CredentialStore } from "../credential-store.js";
 import { logger } from "../../utils/index.js";
-
-const execFileAsync = promisify(execFile);
 
 // ── Gemini CLI Token Paths ──────────────────────────────────────────────
 
@@ -88,11 +86,13 @@ export class GeminiLogin {
   }
 
   /**
-   * Spawn `gemini login` which opens the browser automatically for Google login,
-   * then read the cached tokens from ~/.gemini/oauth_creds.json.
+   * Attempt to import credentials from the Gemini CLI cache.
+   * The Gemini CLI has no `login` subcommand and requires interactive terminal
+   * consent, so it cannot be spawned from within the TUI. If no credentials
+   * are found, instruct the user to run `gemini` in a separate terminal first.
    */
   async login(): Promise<ICredential> {
-    // Check if already logged in via cached tokens
+    // Try importing existing credentials from Gemini CLI's cache
     const existing = this.readCachedCredential();
     if (existing) {
       const isExpired = existing.expiresAt ? new Date() > existing.expiresAt : false;
@@ -103,40 +103,25 @@ export class GeminiLogin {
       }
     }
 
-    // Check if the CLI is available
+    // Check if the CLI is installed
     const cliAvailable = await this.isCliAvailable();
+
     if (!cliAvailable) {
       throw new AuthenticationError(
         "google",
         "Gemini CLI not found. Install it first:\n" +
         "  npm install -g @google/gemini-cli\n" +
-        "Or set an API key: aemeathcli auth set-key gemini <key>",
+        "Then run `gemini` in your terminal to authenticate.",
       );
     }
 
-    // Gemini CLI has no `login` subcommand. Running it with a simple prompt
-    // triggers the OAuth login flow automatically if not authenticated.
-    // Use -p (non-interactive) so it exits after login + one response.
-    logger.info("Spawning gemini CLI to trigger login (browser will open automatically)");
-    try {
-      await this.spawnInteractive(CLI_COMMAND, ["-p", "hello"]);
-    } catch {
-      // The CLI may exit non-zero if the user closes the browser before completing login.
-      // Check if credentials were saved regardless.
-    }
-
-    // Read the freshly cached credentials
-    const credential = this.readCachedCredential();
-    if (!credential) {
-      throw new AuthenticationError(
-        "google",
-        "No credentials found after Gemini login. Please try again or set an API key: aemeathcli auth set-key gemini <key>",
-      );
-    }
-
-    await this.credentialStore.set("google", credential);
-    logger.info("Gemini credentials imported successfully");
-    return credential;
+    // Gemini CLI requires interactive terminal consent — cannot be spawned from the TUI.
+    throw new AuthenticationError(
+      "google",
+      "Gemini CLI requires interactive login.\n" +
+      "Please run `gemini` in a separate terminal to authenticate first,\n" +
+      "then retry /login here to import the credentials.",
+    );
   }
 
   async logout(): Promise<void> {
@@ -204,31 +189,14 @@ export class GeminiLogin {
     };
   }
 
-  private spawnInteractive(command: string, args: readonly string[]): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const child = spawn(command, [...args], {
-        stdio: "inherit",
-        timeout: 300_000,
-        shell: process.platform === "win32",
-      });
-      child.on("close", (code) => {
-        if (code === 0) resolve();
-        else reject(new Error(`Process exited with code ${String(code)}`));
-      });
-      child.on("error", reject);
-    });
-  }
-
   private async isCliAvailable(): Promise<boolean> {
     try {
-      const cmd = process.platform === "win32" ? "where" : "which";
-      await execFileAsync(cmd, [CLI_COMMAND], {
-        timeout: 3000,
-        shell: process.platform === "win32",
-      });
+      await execa(CLI_COMMAND, ["--help"], { timeout: 5000, stdin: "ignore", stdout: "ignore", stderr: "ignore" });
       return true;
-    } catch {
-      return false;
+    } catch (error: unknown) {
+      // ENOENT means CLI not found; any other error means it exists
+      const code = (error as { code?: string }).code;
+      return code !== "ENOENT";
     }
   }
 }
