@@ -284,6 +284,41 @@ export class TeamManager {
     return this.activeTeams.get(teamName)?.planApproval;
   }
 
+  /** Register a callback for IPC messages from all agents in a team. Returns cleanup function. */
+  onAgentMessages(
+    teamName: string,
+    callback: (agentName: string, method: string, params: Record<string, unknown>) => void,
+  ): () => void {
+    const team = this.getActiveTeam(teamName);
+    const cleanups: Array<() => void> = [];
+
+    for (const [agentName, agentProcess] of team.processes) {
+      const unsubscribe = agentProcess.onMessage((method, params) => {
+        callback(agentName, method, params);
+      });
+      cleanups.push(unsubscribe);
+    }
+
+    return () => {
+      for (const cleanup of cleanups) cleanup();
+    };
+  }
+
+  /** Assign a task to a specific agent via IPC. */
+  assignTask(
+    teamName: string,
+    agentName: string,
+    taskId: string,
+    subject: string,
+    description: string,
+  ): void {
+    const team = this.getActiveTeam(teamName);
+    const agentProcess = team.processes.get(agentName);
+    if (agentProcess) {
+      agentProcess.assignTask(taskId, subject, description);
+    }
+  }
+
   /** Check whether a team is currently active in memory. */
   isTeamActive(name: string): boolean {
     return this.activeTeams.has(name);

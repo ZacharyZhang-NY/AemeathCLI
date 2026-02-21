@@ -6,13 +6,22 @@ export type {
   ProviderName,
   ModelRole,
   IModelInfo,
+  IModelDisplayEntry,
+  IThinkingOption,
+  IProviderThinkingConfig,
   IRoleConfig,
   ModelResolutionSource,
   IModelResolution,
   ITokenUsage,
 } from "./model.js";
 
-export { SUPPORTED_MODELS, DEFAULT_MODEL_ID } from "./model.js";
+export {
+  SUPPORTED_MODELS,
+  PROVIDER_MODEL_ORDER,
+  PROVIDER_THINKING_CONFIGS,
+  getThinkingConfigForModel,
+  DEFAULT_MODEL_ID,
+} from "./model.js";
 
 export type {
   MessageRole,

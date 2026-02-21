@@ -11,6 +11,8 @@ interface IStreamState {
   readonly content: string;
   readonly usage: ITokenUsage | undefined;
   readonly error: string | undefined;
+  /** Human-readable label for the current activity (e.g. "Reading src/foo.ts"). */
+  readonly activity: string | undefined;
 }
 
 interface IUseStreamReturn {
@@ -20,12 +22,56 @@ interface IUseStreamReturn {
   readonly reset: () => void;
 }
 
+/** Format a tool call into a short human-readable activity label. */
+function formatToolActivity(toolCall: { name: string; arguments: Record<string, unknown> }): string {
+  const args = toolCall.arguments;
+  switch (toolCall.name) {
+    case "read": {
+      const fp = typeof args["file_path"] === "string" ? args["file_path"] : "";
+      const short = fp.split("/").slice(-2).join("/");
+      return `Reading ${short || "file"}`;
+    }
+    case "write": {
+      const fp = typeof args["file_path"] === "string" ? args["file_path"] : "";
+      const short = fp.split("/").slice(-2).join("/");
+      return `Writing ${short || "file"}`;
+    }
+    case "edit": {
+      const fp = typeof args["file_path"] === "string" ? args["file_path"] : "";
+      const short = fp.split("/").slice(-2).join("/");
+      return `Editing ${short || "file"}`;
+    }
+    case "glob": {
+      const pat = typeof args["pattern"] === "string" ? args["pattern"] : "";
+      return `Searching files ${pat}`;
+    }
+    case "grep": {
+      const pat = typeof args["pattern"] === "string" ? args["pattern"] : "";
+      return `Searching for "${pat.length > 30 ? pat.slice(0, 30) + "..." : pat}"`;
+    }
+    case "bash": {
+      const cmd = typeof args["command"] === "string" ? args["command"] : "";
+      const short = cmd.length > 40 ? cmd.slice(0, 40) + "..." : cmd;
+      return `Running ${short}`;
+    }
+    case "web_search":
+    case "webSearch":
+      return "Searching the web";
+    case "web_fetch":
+    case "webFetch":
+      return "Fetching URL";
+    default:
+      return `Calling ${toolCall.name}`;
+  }
+}
+
 export function useStream(): IUseStreamReturn {
   const [state, setState] = useState<IStreamState>({
     isStreaming: false,
     content: "",
     usage: undefined,
     error: undefined,
+    activity: undefined,
   });
 
   const cancelRef = useRef(false);
@@ -37,6 +83,7 @@ export function useStream(): IUseStreamReturn {
       content: "",
       usage: undefined,
       error: undefined,
+      activity: undefined,
     });
 
     try {
@@ -51,6 +98,17 @@ export function useStream(): IUseStreamReturn {
               setState((prev) => ({
                 ...prev,
                 content: prev.content + chunk.content,
+                // Clear activity once we get text back (model is responding)
+                activity: undefined,
+              }));
+            }
+            break;
+
+          case "tool_call":
+            if (chunk.toolCall) {
+              setState((prev) => ({
+                ...prev,
+                activity: formatToolActivity(chunk.toolCall!),
               }));
             }
             break;
@@ -69,6 +127,7 @@ export function useStream(): IUseStreamReturn {
               ...prev,
               error: chunk.error,
               isStreaming: false,
+              activity: undefined,
             }));
             return;
 
@@ -77,17 +136,19 @@ export function useStream(): IUseStreamReturn {
               ...prev,
               isStreaming: false,
               usage: chunk.usage ?? prev.usage,
+              activity: undefined,
             }));
             return;
         }
       }
 
-      setState((prev) => ({ ...prev, isStreaming: false }));
+      setState((prev) => ({ ...prev, isStreaming: false, activity: undefined }));
     } catch (error: unknown) {
       setState((prev) => ({
         ...prev,
         isStreaming: false,
         error: error instanceof Error ? error.message : String(error),
+        activity: undefined,
       }));
     }
   }, []);
@@ -104,6 +165,7 @@ export function useStream(): IUseStreamReturn {
       content: "",
       usage: undefined,
       error: undefined,
+      activity: undefined,
     });
   }, []);
 

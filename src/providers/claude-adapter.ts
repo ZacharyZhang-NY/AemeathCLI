@@ -28,7 +28,9 @@ const PROVIDER_NAME: ProviderName = "anthropic";
 
 const CLAUDE_MODELS: readonly string[] = [
   "claude-opus-4-6",
+  "claude-opus-4-6-1m",
   "claude-sonnet-4-6",
+  "claude-sonnet-4-6-1m",
   "claude-haiku-4-5",
 ] as const;
 
@@ -95,10 +97,46 @@ function convertTools(
 function buildMessages(
   messages: readonly IChatMessage[],
 ): CoreMessage[] {
-  return messages.map((msg) => ({
-    role: mapRole(msg.role),
-    content: msg.content,
-  })) as CoreMessage[];
+  return messages.map((msg) => {
+    // Assistant message with tool calls → multi-part content
+    if (msg.role === "assistant" && msg.toolCalls !== undefined && msg.toolCalls.length > 0) {
+      const parts: unknown[] = [];
+      if (msg.content.length > 0) {
+        parts.push({ type: "text", text: msg.content });
+      }
+      for (const tc of msg.toolCalls) {
+        parts.push({
+          type: "tool-call",
+          toolCallId: tc.id,
+          toolName: tc.name,
+          args: tc.arguments,
+        });
+      }
+      return { role: "assistant" as const, content: parts };
+    }
+
+    // Tool result message — toolCalls[0] carries the call metadata
+    if (msg.role === "tool" && msg.toolCalls !== undefined && msg.toolCalls.length > 0) {
+      const firstCall = msg.toolCalls[0];
+      if (firstCall !== undefined) {
+        return {
+          role: "tool" as const,
+          content: [{
+            type: "tool-result" as const,
+            toolCallId: firstCall.id,
+            toolName: firstCall.name,
+            result: msg.content,
+          }],
+        };
+      }
+    }
+
+    // Standard text message
+    return {
+      role: mapRole(msg.role),
+      content: msg.content,
+    };
+  }) as CoreMessage[];
 }
 
 function computeCost(modelInfo: IModelInfo, inputTokens: number, outputTokens: number): number {

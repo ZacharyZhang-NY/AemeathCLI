@@ -2,6 +2,7 @@
  * User input component with autocomplete per PRD section 6.2
  * Triggers: / (slash commands), @ (context refs), ` (code refs)
  * Shows first 5 matches, arrow keys to navigate, Enter to select
+ * Supports input history (up/down arrows) and Escape to cancel streaming
  */
 
 import React, { useState, useMemo } from "react";
@@ -17,9 +18,10 @@ interface IInputBarProps {
   readonly onSubmit: (input: string) => void;
   readonly isProcessing: boolean;
   readonly placeholder?: string;
+  readonly onCancel?: (() => void) | undefined;
 }
 
-const TRIGGER_CHARS = new Set<string>(["/", "@", "`"]);
+const TRIGGER_CHARS = new Set<string>(["/", "@", "`", "$"]);
 
 /**
  * Detect if the input has an active autocomplete trigger.
@@ -39,12 +41,17 @@ function detectTrigger(input: string): { trigger: AutocompleteTrigger; query: st
     return { trigger: "/", query: input };
   }
 
+  // Check for $ at start of input (skill invocation)
+  if (input[0] === "$") {
+    return { trigger: "$", query: input };
+  }
+
   // Check for @ or ` — find the last trigger character
   for (let i = input.length - 1; i >= 0; i--) {
     const ch = input[i];
     if (ch === undefined) continue;
 
-    if (TRIGGER_CHARS.has(ch) && ch !== "/") {
+    if (TRIGGER_CHARS.has(ch) && ch !== "/" && ch !== "$") {
       // Trigger must be at start or preceded by a space
       if (i === 0 || input[i - 1] === " ") {
         return {
@@ -63,9 +70,14 @@ function detectTrigger(input: string): { trigger: AutocompleteTrigger; query: st
   return null;
 }
 
-export function InputBar({ onSubmit, isProcessing, placeholder }: IInputBarProps): React.ReactElement {
+const MAX_HISTORY = 100;
+
+export function InputBar({ onSubmit, isProcessing, placeholder, onCancel }: IInputBarProps): React.ReactElement {
   const [input, setInput] = useState("");
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [history, setHistory] = useState<string[]>([]);
+  const [historyIndex, setHistoryIndex] = useState(-1);
+  const [savedInput, setSavedInput] = useState("");
 
   // Compute autocomplete state from current input
   const triggerState = useMemo(() => detectTrigger(input), [input]);
@@ -77,89 +89,118 @@ export function InputBar({ onSubmit, isProcessing, placeholder }: IInputBarProps
 
   const isAutocompleteActive = autocompleteItems.length > 0;
 
-  useInput(
-    (inputChar, key) => {
-      if (isProcessing) {
+  useInput((inputChar, key) => {
+    // During processing, only allow Escape to cancel
+    if (isProcessing) {
+      if (key.escape && onCancel) {
+        onCancel();
+      }
+      return;
+    }
+
+    // ── Autocomplete Navigation ─────────────────────────────────────
+    if (isAutocompleteActive) {
+      if (key.upArrow) {
+        setSelectedIndex((prev) => (prev > 0 ? prev - 1 : autocompleteItems.length - 1));
         return;
       }
 
-      // ── Autocomplete Navigation ─────────────────────────────────────
-      if (isAutocompleteActive) {
-        if (key.upArrow) {
-          setSelectedIndex((prev) => (prev > 0 ? prev - 1 : autocompleteItems.length - 1));
-          return;
-        }
-
-        if (key.downArrow) {
-          setSelectedIndex((prev) => (prev < autocompleteItems.length - 1 ? prev + 1 : 0));
-          return;
-        }
-
-        // Tab or Enter to accept the selected completion
-        if (key.tab) {
-          const selected = autocompleteItems[selectedIndex];
-          if (selected && triggerState) {
-            // Replace the trigger portion with the selected label
-            const beforeTrigger = input.slice(0, input.length - triggerState.query.length);
-            const newInput = beforeTrigger + selected.label + " ";
-            setInput(newInput);
-            setSelectedIndex(0);
-          }
-          return;
-        }
-
-        // Escape to dismiss autocomplete
-        if (key.escape) {
-          // Add a space to break the trigger context
-          setInput((prev) => prev + " ");
-          setSelectedIndex(0);
-          return;
-        }
+      if (key.downArrow) {
+        setSelectedIndex((prev) => (prev < autocompleteItems.length - 1 ? prev + 1 : 0));
+        return;
       }
 
-      // ── Standard Input Handling ─────────────────────────────────────
-      if (key.return) {
-        if (isAutocompleteActive && triggerState?.trigger === "/") {
-          // For slash commands, accept the selected item and submit
-          const selected = autocompleteItems[selectedIndex];
-          if (selected) {
-            onSubmit(selected.label.trim());
-            setInput("");
-            setSelectedIndex(0);
-            return;
-          }
+      // Tab to accept the selected completion
+      if (key.tab) {
+        const selected = autocompleteItems[selectedIndex];
+        if (selected && triggerState) {
+          const beforeTrigger = input.slice(0, input.length - triggerState.query.length);
+          const newInput = beforeTrigger + selected.label + " ";
+          setInput(newInput);
+          setSelectedIndex(0);
         }
+        return;
+      }
 
-        if (input.trim().length > 0) {
-          onSubmit(input.trim());
+      // Escape to dismiss autocomplete
+      if (key.escape) {
+        setInput((prev) => prev + " ");
+        setSelectedIndex(0);
+        return;
+      }
+    }
+
+    // ── Input History Navigation ────────────────────────────────────
+    if (key.upArrow) {
+      if (history.length === 0) return;
+      if (historyIndex === -1) {
+        setSavedInput(input);
+      }
+      const newIndex = historyIndex === -1 ? history.length - 1 : Math.max(0, historyIndex - 1);
+      setHistoryIndex(newIndex);
+      setInput(history[newIndex] ?? "");
+      return;
+    }
+
+    if (key.downArrow) {
+      if (historyIndex === -1) return;
+      const newIndex = historyIndex + 1;
+      if (newIndex >= history.length) {
+        setHistoryIndex(-1);
+        setInput(savedInput);
+      } else {
+        setHistoryIndex(newIndex);
+        setInput(history[newIndex] ?? "");
+      }
+      return;
+    }
+
+    // ── Standard Input Handling ─────────────────────────────────────
+    if (key.return) {
+      if (isAutocompleteActive && triggerState?.trigger === "/") {
+        const selected = autocompleteItems[selectedIndex];
+        if (selected) {
+          setHistory((prev) => [...prev.slice(-(MAX_HISTORY - 1)), selected.label.trim()]);
+          onSubmit(selected.label.trim());
           setInput("");
           setSelectedIndex(0);
+          setHistoryIndex(-1);
+          return;
         }
-        return;
       }
 
-      if (key.backspace || key.delete) {
-        setInput((prev) => prev.slice(0, -1));
+      if (input.trim().length > 0) {
+        setHistory((prev) => [...prev.slice(-(MAX_HISTORY - 1)), input.trim()]);
+        onSubmit(input.trim());
+        setInput("");
         setSelectedIndex(0);
-        return;
+        setHistoryIndex(-1);
       }
+      return;
+    }
 
-      if (key.ctrl && inputChar === "c") {
-        process.exit(0);
-        return;
-      }
+    if (key.backspace || key.delete) {
+      setInput((prev) => prev.slice(0, -1));
+      setSelectedIndex(0);
+      setHistoryIndex(-1);
+      return;
+    }
 
-      if (key.ctrl && inputChar === "l") {
-        return;
-      }
+    if (key.ctrl && inputChar === "c") {
+      process.exit(0);
+      return;
+    }
 
-      if (!key.ctrl && !key.meta && inputChar) {
-        setInput((prev) => prev + inputChar);
-        setSelectedIndex(0);
-      }
-    },
-    { isActive: !isProcessing },
-  );
+    if (key.ctrl && inputChar === "l") {
+      return;
+    }
+
+    if (!key.ctrl && !key.meta && inputChar) {
+      setInput((prev) => prev + inputChar);
+      setSelectedIndex(0);
+      setHistoryIndex(-1);
+    }
+  });
 
   return (
     <Box flexDirection="column">
@@ -168,7 +209,13 @@ export function InputBar({ onSubmit, isProcessing, placeholder }: IInputBarProps
         <Text color="green" bold>
           {">"}{" "}
         </Text>
-        {input.length > 0 ? <Text>{input}</Text> : <Text color="gray">{placeholder ?? "Type a message..."}</Text>}
+        {isProcessing ? (
+          <Text color="gray">{onCancel ? "Esc to cancel" : "Processing..."}</Text>
+        ) : input.length > 0 ? (
+          <Text>{input}</Text>
+        ) : (
+          <Text color="gray">{placeholder ?? "Type a message..."}</Text>
+        )}
         {!isProcessing ? <Text color="green">_</Text> : null}
       </Box>
     </Box>

@@ -100,6 +100,12 @@ export class AgentProcess {
       AEMEATHCLI_AGENT_ID: this.config.agentId,
       AEMEATHCLI_AGENT_NAME: this.config.name,
       AEMEATHCLI_IPC_SOCKET: socketPath,
+      // Prefer SDK adapters when API keys are available (not OAuth/native login).
+      // Native login credentials always use native CLI adapters regardless of
+      // this flag — the registry enforces this to avoid "invalid API key" errors.
+      AEMEATHCLI_PREFER_SDK: "1",
+      // Increase timeout for native CLI fallback (agent tasks can be long).
+      AEMEATHCLI_NATIVE_CLI_TIMEOUT_MS: "300000",
     };
 
     try {
@@ -240,12 +246,28 @@ export class AgentProcess {
     const child = this.child;
     if (!child) return;
 
+    // Do NOT forward child stdout as agent.streamChunk.
+    // The agent child sends all structured output via IPC (process.send).
+    // Forwarding stdout captures raw noise from subprocess execution
+    // (e.g. native CLI adapters shelling out to codex/gemini/claude).
     child.stdout?.on("data", (chunk: Buffer | string) => {
-      this.drainChildOutput("stdout", chunk);
+      const content = typeof chunk === "string" ? chunk : chunk.toString("utf-8");
+      if (content.length > 0) {
+        logger.debug(
+          { agent: this.config.name, bytes: content.length },
+          "Agent stdout (suppressed from UI)",
+        );
+      }
     });
 
     child.stderr?.on("data", (chunk: Buffer | string) => {
-      this.drainChildOutput("stderr", chunk);
+      const content = typeof chunk === "string" ? chunk : chunk.toString("utf-8");
+      if (content.length > 0) {
+        logger.warn(
+          { agent: this.config.name, stderr: content.slice(0, 200) },
+          "Agent stderr",
+        );
+      }
     });
 
     child.on("message", (raw: unknown) => {
@@ -349,21 +371,6 @@ export class AgentProcess {
     getEventBus().emit("agent:status", {
       agentName: this.config.name,
       status,
-    });
-  }
-
-  private drainChildOutput(stream: "stdout" | "stderr", chunk: Buffer | string): void {
-    const content = typeof chunk === "string" ? chunk : chunk.toString("utf-8");
-    if (content.length === 0) {
-      return;
-    }
-
-    const method = stream === "stdout" ? "agent.streamChunk" : "agent.message";
-    this.notifyCallbacks(method, {
-      agentId: this.config.agentId,
-      agentName: this.config.name,
-      stream,
-      content,
     });
   }
 

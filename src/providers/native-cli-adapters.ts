@@ -29,17 +29,21 @@ interface ICLIResult {
 }
 
 const CHARS_PER_TOKEN_ESTIMATE = 4;
-const DEFAULT_CLI_TIMEOUT_MS = 120_000;
 
+/**
+ * Resolve CLI timeout from environment. Default is 0 (no timeout) so that
+ * long-running agent tasks are never prematurely killed.
+ * Set AEMEATHCLI_NATIVE_CLI_TIMEOUT_MS to a positive integer to enforce a limit.
+ */
 function resolveCliTimeoutMs(): number {
   const raw = process.env["AEMEATHCLI_NATIVE_CLI_TIMEOUT_MS"];
   if (raw === undefined) {
-    return DEFAULT_CLI_TIMEOUT_MS;
+    return 0;
   }
 
   const parsed = Number.parseInt(raw, 10);
   if (!Number.isFinite(parsed) || parsed <= 0) {
-    return DEFAULT_CLI_TIMEOUT_MS;
+    return 0;
   }
 
   return parsed;
@@ -172,10 +176,11 @@ abstract class BaseNativeCLIAdapter implements IModelProvider {
       yield { type: "usage", usage: response.usage };
       yield { type: "done" };
     } catch (error: unknown) {
-      yield {
-        type: "error",
-        error: error instanceof Error ? error.message : String(error),
-      };
+      // Execa errors can include raw stdout/stderr in the message.
+      // Truncate to prevent raw CLI protocol output from leaking through.
+      const rawMsg = error instanceof Error ? error.message : String(error);
+      const truncated = rawMsg.length > 500 ? rawMsg.slice(0, 500) + "..." : rawMsg;
+      yield { type: "error", error: truncated };
       yield { type: "done" };
     }
   }
@@ -201,7 +206,9 @@ export class ClaudeNativeCLIAdapter extends BaseNativeCLIAdapter {
   readonly name: ProviderName = "anthropic";
   readonly supportedModels = [
     "claude-opus-4-6",
+    "claude-opus-4-6-1m",
     "claude-sonnet-4-6",
+    "claude-sonnet-4-6-1m",
     "claude-haiku-4-5",
   ] as const;
 
@@ -239,16 +246,25 @@ export class ClaudeNativeCLIAdapter extends BaseNativeCLIAdapter {
 
 export class CodexNativeCLIAdapter extends BaseNativeCLIAdapter {
   readonly name: ProviderName = "openai";
-  readonly supportedModels = ["gpt-5.2", "gpt-5.2-mini", "o3"] as const;
+  readonly supportedModels = [
+    "gpt-5.3-codex",
+    "gpt-5.3-codex-spark",
+    "gpt-5.2-codex",
+    "gpt-5.1-codex-max",
+    "gpt-5.2",
+    "gpt-5.1-codex-mini",
+  ] as const;
 
   protected async runCLI(model: string, prompt: string): Promise<ICLIResult> {
+    // Allow agent panes to set a writable sandbox so codex can write to the
+    // shared board directory.  Default to "read-only" for normal usage.
+    const sandbox = process.env["AEMEATHCLI_CODEX_SANDBOX"] ?? "read-only";
     const { stdout } = await execa(
       "codex",
       [
         "exec",
         "--skip-git-repo-check",
-        "--sandbox",
-        "read-only",
+        ...(sandbox !== "none" ? ["--sandbox", sandbox] : []),
         "--json",
         "--model",
         model,
@@ -300,7 +316,13 @@ export class CodexNativeCLIAdapter extends BaseNativeCLIAdapter {
 
 export class GeminiNativeCLIAdapter extends BaseNativeCLIAdapter {
   readonly name: ProviderName = "google";
-  readonly supportedModels = ["gemini-2.5-pro", "gemini-2.5-flash"] as const;
+  readonly supportedModels = [
+    "gemini-3-pro-preview",
+    "gemini-3-flash-preview",
+    "gemini-2.5-pro",
+    "gemini-2.5-flash",
+    "gemini-2.5-flash-lite",
+  ] as const;
 
   protected async runCLI(model: string, prompt: string): Promise<ICLIResult> {
     const { stdout } = await execa(
@@ -359,7 +381,7 @@ export class GeminiNativeCLIAdapter extends BaseNativeCLIAdapter {
 
 export class KimiNativeCLIAdapter extends BaseNativeCLIAdapter {
   readonly name: ProviderName = "kimi";
-  readonly supportedModels = ["kimi-k2.5"] as const;
+  readonly supportedModels = ["kimi-for-coding"] as const;
 
   protected async runCLI(_model: string, prompt: string): Promise<ICLIResult> {
     const { stdout } = await execa(

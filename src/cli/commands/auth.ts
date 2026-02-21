@@ -17,7 +17,7 @@ const PROVIDER_MODEL_SWITCH: Readonly<Record<LoginProvider, { provider: Provider
   claude: { provider: "anthropic", model: "claude-sonnet-4-6" },
   codex: { provider: "openai", model: "gpt-5.2" },
   gemini: { provider: "google", model: "gemini-2.5-pro" },
-  kimi: { provider: "kimi", model: "kimi-k2.5" },
+  kimi: { provider: "kimi", model: "kimi-for-coding" },
 };
 
 export function createAuthCommand(): Command {

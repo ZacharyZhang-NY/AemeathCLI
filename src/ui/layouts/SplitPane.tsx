@@ -16,6 +16,7 @@ interface ISplitPaneProps {
   readonly agentOutputs: ReadonlyMap<string, string>;
   readonly isProcessing: boolean;
   readonly onSubmit: (input: string) => void;
+  readonly onCancel?: (() => void) | undefined;
   readonly model: string;
   readonly role?: string | undefined;
   readonly tokenCount: string;
@@ -30,6 +31,7 @@ export function SplitPane({
   agentOutputs,
   isProcessing,
   onSubmit,
+  onCancel,
   model,
   role,
   tokenCount,
@@ -45,7 +47,7 @@ export function SplitPane({
         onSelectAgent={onSelectAgent}
         agentOutputs={agentOutputs}
       />
-      <InputBar onSubmit={onSubmit} isProcessing={isProcessing} />
+      <InputBar onSubmit={onSubmit} isProcessing={isProcessing} onCancel={onCancel} />
     </Box>
   );
 }

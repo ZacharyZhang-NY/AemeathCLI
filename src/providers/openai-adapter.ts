@@ -1,6 +1,6 @@
 /**
  * OpenAI adapter via Vercel AI SDK per PRD section 7.1
- * Supports GPT-5.2, GPT-5.2-mini, o3
+ * Supports GPT-5.3 Codex, GPT-5.2, GPT-5.1 Codex series
  */
 
 import { generateText, streamText, type CoreMessage } from "ai";
@@ -27,9 +27,12 @@ import type { IModelProvider, IProviderOptions } from "./types.js";
 const PROVIDER_NAME: ProviderName = "openai";
 
 const OPENAI_MODELS: readonly string[] = [
+  "gpt-5.3-codex",
+  "gpt-5.3-codex-spark",
+  "gpt-5.2-codex",
+  "gpt-5.1-codex-max",
   "gpt-5.2",
-  "gpt-5.2-mini",
-  "o3",
+  "gpt-5.1-codex-mini",
 ] as const;
 
 const CHARS_PER_TOKEN_ESTIMATE = 4;

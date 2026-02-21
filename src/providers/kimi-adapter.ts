@@ -1,7 +1,7 @@
 /**
  * Kimi (Moonshot) adapter — custom HTTP per PRD section 7.1
  * Uses OpenAI-compatible API format via fetch().
- * Supports Kimi K2.5
+ * Supports Kimi Code (kimi-for-coding)
  */
 
 import { logger } from "../utils/logger.js";
@@ -26,7 +26,7 @@ import type { IModelProvider, IProviderOptions } from "./types.js";
 const PROVIDER_NAME: ProviderName = "kimi";
 const DEFAULT_BASE_URL = "https://api.moonshot.cn/v1";
 
-const KIMI_MODELS: readonly string[] = ["kimi-k2.5"] as const;
+const KIMI_MODELS: readonly string[] = ["kimi-for-coding"] as const;
 const CHARS_PER_TOKEN_ESTIMATE = 4;
 
 interface OpenAIMessage { role: string; content: string }

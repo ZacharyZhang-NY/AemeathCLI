@@ -164,9 +164,12 @@ export class TmuxManager {
       return;
     }
 
+    // tmux pane IDs (%N) are globally unique — use them directly.
+    // The format "session:%N" is invalid because tmux interprets
+    // the part after ":" as a window name, not a pane ID.
     await execa(TMUX_BINARY, [
       "send-keys",
-      "-t", `${this.sessionName}:${info.tmuxPaneId}`,
+      "-t", info.tmuxPaneId,
       command,
       "Enter",
     ]);
@@ -187,7 +190,7 @@ export class TmuxManager {
     const info = this.panes.get(paneId);
     if (!info) return;
 
-    const target = `${this.sessionName}:${info.tmuxPaneId}`;
+    const target = info.tmuxPaneId;
 
     if (dimensions.width !== undefined) {
       await execa(TMUX_BINARY, ["resize-pane", "-t", target, "-x", String(dimensions.width)]);
@@ -205,7 +208,7 @@ export class TmuxManager {
     try {
       await execa(TMUX_BINARY, [
         "select-pane",
-        "-t", `${this.sessionName}:${tmuxPaneId}`,
+        "-t", tmuxPaneId,
         "-T", title,
       ]);
     } catch {
@@ -225,7 +228,7 @@ export class TmuxManager {
     try {
       await execa(TMUX_BINARY, [
         "kill-pane",
-        "-t", `${this.sessionName}:${info.tmuxPaneId}`,
+        "-t", info.tmuxPaneId,
       ]);
       this.panes.delete(paneId);
       getEventBus().emit("pane:closed", { paneId });

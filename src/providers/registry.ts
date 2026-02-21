@@ -158,6 +158,12 @@ export async function createDefaultRegistry(): Promise<ProviderRegistry> {
   const session = new SessionManager();
   const { execa } = await import("execa");
 
+  // When AEMEATHCLI_PREFER_SDK=1 (set for agent child processes), prefer
+  // SDK-based adapters over native CLI adapters.  Native CLI adapters shell
+  // out to external binaries whose raw JSON output can interfere with IPC
+  // streaming.  Falls back to native only when no API key is available.
+  const preferSdk = process.env["AEMEATHCLI_PREFER_SDK"] === "1";
+
   const cliAvailability = new Map<string, boolean>();
   const hasCli = async (command: string): Promise<boolean> => {
     const cached = cliAvailability.get(command);
@@ -175,6 +181,35 @@ export async function createDefaultRegistry(): Promise<ProviderRegistry> {
     }
   };
 
+  /** Determine whether to use a native CLI adapter for a provider. */
+  const shouldUseNative = async (
+    credential: { method: string; token?: string | undefined } | undefined,
+    cliCommand: string,
+    envKeyName: string,
+  ): Promise<boolean> => {
+    // Native login credentials (OAuth sessions) must always use the native CLI
+    // adapter. The stored token is an OAuth session token, NOT an API key — SDK
+    // adapters will reject it with "invalid x-api-key" / "API key not valid".
+    if (credential?.method === "native_login") {
+      return await hasCli(cliCommand);
+    }
+
+    // When preferSdk is set, only use native if SDK has no way to authenticate.
+    if (preferSdk) {
+      const hasApiKey =
+        credential?.token !== undefined ||
+        process.env[envKeyName] !== undefined;
+      if (hasApiKey) {
+        return false;
+      }
+      // No API key available — fall back to native if CLI exists.
+      return await hasCli(cliCommand);
+    }
+
+    // Default behavior: prefer native when CLI is available and no explicit credential.
+    return credential === undefined && await hasCli(cliCommand);
+  };
+
   const providerLoaders: ReadonlyArray<{
     name: string;
     load: () => Promise<IModelProvider>;
@@ -184,8 +219,7 @@ export async function createDefaultRegistry(): Promise<ProviderRegistry> {
       load: async () => {
         const { ClaudeAdapter } = await import("./claude-adapter.js");
         const credential = await session.getActiveCredential("anthropic").catch(() => undefined);
-        const useNative = credential?.method === "native_login"
-          || (credential === undefined && await hasCli("claude"));
+        const useNative = await shouldUseNative(credential, "claude", "ANTHROPIC_API_KEY");
 
         if (useNative) {
           const { ClaudeNativeCLIAdapter, logNativeAdapterSelection } = await import(
@@ -205,8 +239,7 @@ export async function createDefaultRegistry(): Promise<ProviderRegistry> {
       load: async () => {
         const { OpenAIAdapter } = await import("./openai-adapter.js");
         const credential = await session.getActiveCredential("openai").catch(() => undefined);
-        const useNative = credential?.method === "native_login"
-          || (credential === undefined && await hasCli("codex"));
+        const useNative = await shouldUseNative(credential, "codex", "OPENAI_API_KEY");
 
         if (useNative) {
           const { CodexNativeCLIAdapter, logNativeAdapterSelection } = await import(
@@ -226,8 +259,7 @@ export async function createDefaultRegistry(): Promise<ProviderRegistry> {
       load: async () => {
         const { GeminiAdapter } = await import("./gemini-adapter.js");
         const credential = await session.getActiveCredential("google").catch(() => undefined);
-        const useNative = credential?.method === "native_login"
-          || (credential === undefined && await hasCli("gemini"));
+        const useNative = await shouldUseNative(credential, "gemini", "GOOGLE_API_KEY");
 
         if (useNative) {
           const { GeminiNativeCLIAdapter, logNativeAdapterSelection } = await import(
@@ -247,8 +279,7 @@ export async function createDefaultRegistry(): Promise<ProviderRegistry> {
       load: async () => {
         const { KimiAdapter } = await import("./kimi-adapter.js");
         const credential = await session.getActiveCredential("kimi").catch(() => undefined);
-        const useNative = credential?.method === "native_login"
-          || (credential === undefined && await hasCli("kimi"));
+        const useNative = await shouldUseNative(credential, "kimi", "MOONSHOT_API_KEY");
 
         if (useNative) {
           const { KimiNativeCLIAdapter, logNativeAdapterSelection } = await import(

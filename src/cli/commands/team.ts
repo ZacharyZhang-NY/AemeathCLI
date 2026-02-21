@@ -160,6 +160,63 @@ export function createTeamCommand(): Command {
     });
 
   team
+    .command("start <name>")
+    .description("Start agents for an existing team")
+    .action(async (name: string) => {
+      process.stdout.write(pc.cyan(`Starting agents for team "${name}"...\n`));
+
+      try {
+        const { TeamManager } = await import("../../teams/team-manager.js");
+        const manager = new TeamManager();
+
+        if (!manager.isTeamActive(name)) {
+          // Load config from disk and re-create the active runtime
+          const teamConfig = manager.getTeam(name);
+          await manager.createTeam(name, {
+            agents: teamConfig.members.map((m) => ({
+              name: m.name,
+              agentType: m.agentType,
+              model: m.model,
+              provider: m.provider,
+              role: m.role,
+            })),
+          }).catch(() => {
+            // Team may already exist on disk, just need to start agents
+          });
+        }
+
+        await manager.startAgents(name);
+        process.stdout.write(pc.green(`Agents started for team "${name}"\n`));
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        process.stderr.write(pc.red(`Failed to start team: ${message}\n`));
+        process.exitCode = 3;
+      }
+    });
+
+  team
+    .command("stop <name>")
+    .description("Stop all agents for a team (without deleting)")
+    .action(async (name: string) => {
+      try {
+        const { TeamManager } = await import("../../teams/team-manager.js");
+        const manager = new TeamManager();
+
+        if (!manager.isTeamActive(name)) {
+          process.stderr.write(pc.yellow(`Team "${name}" is not active\n`));
+          return;
+        }
+
+        await manager.deleteTeam(name);
+        process.stdout.write(pc.green(`Team "${name}" stopped\n`));
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        process.stderr.write(pc.red(`Failed to stop team: ${message}\n`));
+        process.exitCode = 3;
+      }
+    });
+
+  team
     .command("list")
     .description("List active teams")
     .action(async () => {

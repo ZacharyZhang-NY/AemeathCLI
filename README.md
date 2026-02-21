@@ -23,7 +23,7 @@
   ╚══════════════════════════════════════════════╝
 ```
 
-AemeathCLI orchestrates **multiple AI models** across **parallel agent teams** in your terminal. Route Claude for planning, GPT for coding, Gemini for reviews -- all in split-panel tmux panes with real-time streaming, cost tracking, and enterprise-grade security.
+AemeathCLI orchestrates **multiple AI models** across **parallel agent teams** in your terminal. Route Claude for planning, GPT for coding, Gemini for reviews -- all in split-panel panes (iTerm2 native on macOS, tmux elsewhere) with real-time streaming, hub-and-spoke coordination, cost tracking, and enterprise-grade security.
 
 <br />
 
@@ -53,7 +53,7 @@ AemeathCLI orchestrates **multiple AI models** across **parallel agent teams** i
 Most AI coding tools lock you into a single model. AemeathCLI breaks that ceiling:
 
 - **Multi-model orchestration** -- Use the right model for each task. Claude Opus for architecture, GPT-5.2 for implementation, Gemini 2.5 Pro for code review -- in one session.
-- **Agent teams** -- Spawn parallel agents in tmux/iTerm2 split panes, each with their own model, role, and context. A leader coordinates, teammates execute.
+- **Agent teams** -- Describe what you need in plain English and the LLM designs the team. Agents spawn in iTerm2/tmux split panes with a hub-and-spoke coordination model -- a leader orchestrates, teammates execute, and results are synthesized through a shared board.
 - **Smart routing** -- Define role-based routing rules. When you switch to "review" mode, the system automatically picks the best model for reviewing code.
 - **Cost-aware** -- Real-time token counting, per-model cost tracking, configurable budget warnings and hard stops. Know exactly what you're spending.
 - **Skills & MCP** -- Extend functionality with YAML-defined skills and Model Context Protocol servers. Your tools, your workflow.
@@ -185,15 +185,30 @@ aemeathcli test "Generate tests for the recent changes"
 
 ### Team Mode
 
+Teams are created through **natural language** in the interactive chat -- no CLI subcommands needed:
+
 ```bash
-# Spawn a 3-agent team in split tmux panes
-aemeathcli team create "auth-feature" --agents 3 --model claude-sonnet-4-6
+# Start interactive session
+aemeathcli
 
-# List active teams
-aemeathcli team list
+# Then describe the team you need:
+> Create a team to refactor the authentication module
+> I need agents to review this PR from security, architecture, and code quality angles
+> Spawn a team to build the new payment feature with planning, coding, and testing
+```
 
-# Clean up
-aemeathcli team delete "auth-feature"
+The LLM designs the optimal team (roles, models, agent count) and spawns each agent in its own split pane. On macOS with iTerm2, panes are native terminal splits. On Linux or inside tmux, panes use tmux splits. Stop a team with `/team stop`.
+
+```
+┌───────────────────────┬───────────────────────┐
+│ LeadArchitect         │ BackendDev            │
+│ (Claude Opus 4.6)     │ (Claude Sonnet 4.6)   │
+│ Role: planning        │ Role: coding          │
+│                       ├───────────────────────┤
+│ Coordinates team,     │ SecurityAuditor       │
+│ synthesizes results   │ (GPT-5.2 Codex)       │
+│                       │ Role: review          │
+└───────────────────────┴───────────────────────┘
 ```
 
 <br />
@@ -265,44 +280,71 @@ Customize routing in `~/.aemeathcli/config.json`:
 
 ## Agent Teams
 
-Spawn parallel agents that work together in coordinated split-panel layouts.
+Create parallel agent teams through natural language. The LLM designs the team, split panes launch automatically, and agents coordinate via a hub-and-spoke model.
 
 ### How It Works
 
-1. **Create a team** -- A leader agent orchestrates, teammates execute
-2. **Split panels** -- Each agent gets its own tmux/iTerm2 pane
-3. **IPC coordination** -- JSON-RPC 2.0 over Unix domain sockets with HMAC-SHA256 auth
-4. **Task management** -- Built-in task store with dependencies, statuses, and assignments
+1. **Natural language creation** -- Describe the team you need ("Create a team to review the codebase"). No CLI subcommands or JSON config needed.
+2. **LLM-driven design** -- The active model decides the optimal team: agent count, names, roles, models, and task prompts -- all tailored to your request.
+3. **Split-panel mode** -- Each agent gets its own terminal pane (iTerm2 native splits on macOS, tmux splits on Linux/inside tmux).
+4. **Hub-and-spoke coordination** -- A lead agent orchestrates the effort. All agents share a board directory where they write outputs, read each other's work, and the lead synthesizes a final summary.
+5. **Cross-model teams** -- The LLM assigns different providers per agent: Claude Opus for planning, GPT Codex for coding, Gemini Pro for research -- all in one team.
 
-```bash
-aemeathcli team create "refactor-api" --agents 4 --layout grid
+### Split-Panel Backends
+
+| Environment | Backend | How |
+|:------------|:--------|:----|
+| **macOS + iTerm2** | Native iTerm2 panes | AppleScript creates vertical/horizontal splits directly in your iTerm2 window |
+| **Inside tmux** | tmux splits | Auto-splits the current tmux window for each agent |
+| **Outside tmux (Linux)** | tmux session | Creates a new tmux session and attaches |
+| **No pane manager** | Single-pane fallback | Tab-based agent switching within the TUI |
+
+### Hub-and-Spoke Coordination
+
+Following the patterns established by Claude Code Agent Teams and OpenAI Codex Multi-Agent:
+
+```
+                  ┌─────────────────────┐
+                  │     Shared Board    │
+                  │  /tmp/aemeathcli-*/ │
+                  │    board/           │
+                  └──┬──────┬──────┬───┘
+                     │      │      │
+              ┌──────┘      │      └──────┐
+              │             │             │
+        ┌─────┴─────┐ ┌────┴────┐ ┌──────┴─────┐
+        │   Lead    │ │ Agent 2 │ │  Agent 3   │
+        │ Writes:   │ │ Writes: │ │ Writes:    │
+        │ coord.md  │ │ own .md │ │ own .md    │
+        │ SUMMARY.md│ │         │ │            │
+        └───────────┘ └─────────┘ └────────────┘
 ```
 
-### Auto-Layout
-
-| Agents | Layout |
-|:------:|:-------|
-| 2 | Horizontal 50/50 split |
-| 3 | Leader top, 2 teammates bottom |
-| 4 | 2&times;2 grid |
-| 5+ | Leader top, teammates in grid below |
+- **Team manifest** (`team-manifest.json`) -- Full team structure visible to every agent: names, roles, models, output file paths
+- **Lead agent writes** `coordinator.md` with the task breakdown and assignments, then reads all agent outputs to produce `SUMMARY.md`
+- **Non-lead agents** check the coordinator plan, do their bounded work, and write results to their output file
+- **File-based protocol** -- No complex IPC needed for coordination. Agents read/write markdown files in the shared board directory.
 
 ### Cross-Model Teams
 
-Each agent can run a different model and role:
+Each agent runs a different model selected by the LLM based on role suitability:
 
 ```json
-{
-  "agents": [
-    { "name": "architect", "model": "claude-opus-4-6", "role": "planning" },
-    { "name": "coder-1", "model": "gpt-5.2", "role": "coding" },
-    { "name": "coder-2", "model": "claude-sonnet-4-6", "role": "coding" },
-    { "name": "reviewer", "model": "gemini-2.5-pro", "role": "review" }
-  ]
-}
+[
+  { "name": "AuthArchitect", "model": "claude-opus-4-6", "role": "planning" },
+  { "name": "BackendDev", "model": "claude-sonnet-4-6", "role": "coding" },
+  { "name": "SecurityReviewer", "model": "gpt-5.2-codex", "role": "review" },
+  { "name": "TestWriter", "model": "gemini-2.5-flash", "role": "testing" }
+]
 ```
 
-When tmux is unavailable, AemeathCLI gracefully falls back to a tab-based split panel in the terminal UI.
+### Team Controls
+
+| Action | How |
+|:-------|:----|
+| Create team | Natural language in chat: "Create a team to build X" |
+| View agents | Each agent has its own pane -- click or switch panes |
+| Stop team | `/team stop` in the leader pane |
 
 <br />
 
@@ -437,7 +479,7 @@ During a chat session:
   },
   "splitPanel": {
     "enabled": true,
-    "backend": "tmux",
+    "backend": "auto",
     "defaultLayout": "auto",
     "maxPanes": 6
   },

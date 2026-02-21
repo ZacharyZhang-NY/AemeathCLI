@@ -27,8 +27,11 @@ import type { IModelProvider, IProviderOptions } from "./types.js";
 const PROVIDER_NAME: ProviderName = "google";
 
 const GEMINI_MODELS: readonly string[] = [
+  "gemini-3-pro-preview",
+  "gemini-3-flash-preview",
   "gemini-2.5-pro",
   "gemini-2.5-flash",
+  "gemini-2.5-flash-lite",
 ] as const;
 
 const CHARS_PER_TOKEN_ESTIMATE = 4;
