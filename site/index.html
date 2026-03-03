@@ -54,6 +54,7 @@
             --syntax-string: #a5b4fc;
             --space-unit: 1.5rem;
             --grid-line: 1px solid var(--border-dim);
+            --bg-terminal: #000;
             --mono-font: 'SF Mono', 'Fira Code', 'Roboto Mono', 'Cascadia Code', 'JetBrains Mono', ui-monospace, monospace;
         }
 
@@ -101,13 +102,16 @@
             height: 100vh;
         }
 
-        .brand {
+        .brand, .mobile-brand {
             font-size: 16px;
             font-weight: 700;
-            margin-bottom: 2rem;
             display: flex;
             align-items: center;
             gap: 0.5rem;
+        }
+
+        .brand {
+            margin-bottom: 2rem;
         }
 
         .brand-icon { color: var(--accent-diff-text); }
@@ -132,7 +136,9 @@
         }
         .nav-item:hover::before,
         .nav-item:focus-visible::before { opacity: 1; }
-        .nav-item:focus-visible {
+        .nav-item:focus-visible,
+        .hamburger:focus-visible,
+        .mobile-nav-close:focus-visible {
             outline: 2px solid var(--accent-diff-text);
             outline-offset: 2px;
         }
@@ -153,13 +159,6 @@
             justify-content: space-between;
         }
 
-        .mobile-brand {
-            font-size: 16px;
-            font-weight: 700;
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-        }
 
         .hamburger {
             background: none;
@@ -177,11 +176,6 @@
         .hamburger:focus-visible {
             color: var(--text-primary);
             border-color: var(--border-active);
-        }
-
-        .hamburger:focus-visible {
-            outline: 2px solid var(--accent-diff-text);
-            outline-offset: 2px;
         }
 
         .mobile-nav-overlay {
@@ -227,10 +221,6 @@
         }
 
         .mobile-nav-close:hover { color: var(--text-primary); }
-        .mobile-nav-close:focus-visible {
-            outline: 2px solid var(--accent-diff-text);
-            outline-offset: 2px;
-        }
 
         .mobile-nav .nav-item { font-size: 16px; padding: 16px 0; }
 
@@ -287,8 +277,7 @@
             display: flex;
             align-items: center;
             border: var(--grid-line);
-            background: #000;
-            padding: 0;
+            background: var(--bg-terminal);
             max-width: 500px;
             margin-bottom: 3rem;
             transition: border-color 0.2s;
@@ -338,7 +327,7 @@
         /* -- Terminal Window -- */
         .terminal-window {
             border: var(--grid-line);
-            background: #000;
+            background: var(--bg-terminal);
         }
 
         .terminal-header {
@@ -390,15 +379,13 @@
 
         .kwd { color: var(--syntax-keyword); }
         .str { color: var(--syntax-string); }
-        .fn { color: var(--syntax-function); }
-        .tag { color: var(--syntax-function); }
+        .fn, .tag { color: var(--syntax-function); }
         .attr { color: var(--text-secondary); }
 
         /* -- Features Grid -- */
         .features-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-            border-bottom: var(--grid-line);
         }
 
         .feature-cell {
@@ -467,7 +454,7 @@
 
         .terminal-output {
             border: var(--grid-line);
-            background: #000;
+            background: var(--bg-terminal);
             padding: 1.5rem;
         }
 
@@ -654,7 +641,7 @@
                         <span>src/core/model-router.ts</span>
                         <span>esc when done</span>
                     </div>
-                    <div class="code-block" role="img" aria-label="Code diff showing the model resolution pipeline: checking user override, then primary model config, then fallback chain">
+                    <div class="code-block" aria-label="Code diff showing the model resolution pipeline: checking user override, then primary model config, then fallback chain">
                         <div class="line">
                             <span class="ln">12</span>
                             <span class="code"><span class="kwd">export const</span> <span class="fn">resolve</span> = ({ <span class="attr">role</span>, <span class="attr">ctx</span> }) =&gt; {</span>
@@ -770,7 +757,7 @@
 
                     <div class="terminal-output reveal reveal-delay-1">
                         <div class="terminal-label">Split-Panel Output</div>
-                        <div class="terminal-content" role="img" aria-label="Terminal output showing AemeathCLI spawning a 3-agent team with Claude Opus for planning, Sonnet for coding, and GPT for review">
+                        <div class="terminal-content" aria-label="Terminal output showing AemeathCLI spawning a 3-agent team with Claude Opus for planning, Sonnet for coding, and GPT for review">
                             <div>&gt; Analyzing team request... <span class="terminal-highlight">Done</span></div>
                             <div>&gt; Designed 3-agent team:</div>
                             <div class="terminal-indent"><span class="terminal-highlight">AuthArchitect</span> (claude-opus-4-6) &mdash; planning</div>
@@ -789,7 +776,7 @@
     </div>
 
     <!-- Footer -->
-    <footer class="shortcuts-bar" role="contentinfo">
+    <footer class="shortcuts-bar">
         <div class="key-group">
             <div><span class="key">g</span> GitHub</div>
             <div><span class="key">d</span> npm</div>
@@ -806,6 +793,8 @@
             var copyBtn = document.querySelector('.copy-btn');
             var installInput = document.getElementById('install-cmd');
             if (!copyBtn || !installInput) return;
+
+            var originalLabel = copyBtn.textContent;
 
             copyBtn.addEventListener('click', function() {
                 var text = installInput.value;
@@ -824,9 +813,8 @@
             }
 
             function onCopied() {
-                var original = copyBtn.textContent;
                 copyBtn.textContent = 'done';
-                setTimeout(function() { copyBtn.textContent = original; }, 1500);
+                setTimeout(function() { copyBtn.textContent = originalLabel; }, 1500);
             }
         })();
 
@@ -836,6 +824,7 @@
             var overlay = document.getElementById('mobile-nav-overlay');
             var closeBtn = document.querySelector('.mobile-nav-close');
             var navLinks = overlay ? overlay.querySelectorAll('.nav-item') : [];
+            var focusableNav = overlay ? overlay.querySelectorAll('button, a[href]') : [];
 
             function openNav() {
                 overlay.classList.add('open');
@@ -860,14 +849,15 @@
             navLinks.forEach(function(link) { link.addEventListener('click', closeNav); });
 
             document.addEventListener('keydown', function(e) {
-                if (e.key === 'Escape' && overlay.classList.contains('open')) {
+                if (!overlay.classList.contains('open')) return;
+
+                if (e.key === 'Escape') {
                     closeNav();
                     return;
                 }
-                if (e.key === 'Tab' && overlay.classList.contains('open')) {
-                    var focusable = overlay.querySelectorAll('button, a[href]');
-                    var first = focusable[0];
-                    var last = focusable[focusable.length - 1];
+                if (e.key === 'Tab') {
+                    var first = focusableNav[0];
+                    var last = focusableNav[focusableNav.length - 1];
                     if (e.shiftKey) {
                         if (document.activeElement === first) { e.preventDefault(); last.focus(); }
                     } else {
