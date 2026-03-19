@@ -14,6 +14,7 @@ import { MarkdownContent } from "../components/MarkdownContent.js";
 import { colors } from "../theme.js";
 import type { InputMode } from "../components/InputBar.js";
 import type { IChatMessage } from "../../types/index.js";
+import { PACKAGE_VERSION } from "../../version.js";
 
 interface ISinglePaneProps {
   readonly messages: readonly IChatMessage[];
@@ -94,7 +95,9 @@ export function SinglePane({
 
       {messages.length === 0 && !isProcessing ? (
         /* ── Welcome screen ────────────────────────────────── */
-        <WelcomeScreen version="1.0.10" />
+        <WelcomeScreen
+          version={PACKAGE_VERSION}
+        />
       ) : (
         <>
           <MessageView messages={messages} />

@@ -17,8 +17,14 @@ export type ToolCategory = "file" | "search" | "shell" | "web" | "git" | "mcp";
 export interface IToolRegistration {
   readonly definition: IToolDefinition;
   readonly category: ToolCategory;
-  readonly requiresApproval: (mode: PermissionMode, args: Record<string, unknown>) => boolean;
-  readonly execute: (args: Record<string, unknown>) => Promise<IToolResult>;
+  readonly requiresApproval: (
+    context: IToolExecutionContext,
+    args: Record<string, unknown>,
+  ) => boolean;
+  readonly execute: (
+    args: Record<string, unknown>,
+    context: IToolExecutionContext,
+  ) => Promise<IToolResult>;
 }
 
 // ── Tool Execution Context ───────────────────────────────────────────────

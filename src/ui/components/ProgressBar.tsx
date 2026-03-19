@@ -3,9 +3,10 @@
  * Supports determinate (percentage) and indeterminate (bouncing highlight) modes.
  */
 
-import React, { useState, useEffect } from "react";
+import React from "react";
 import { Box, Text } from "ink";
 import { BRAND_COLOR, colors } from "../theme.js";
+import { useAnimationTick } from "../hooks/use-animation-tick.js";
 
 interface IProgressBarProps {
   /** Progress 0-100 for determinate mode; omit for indeterminate. */
@@ -27,17 +28,7 @@ export function ProgressBar({
   label,
   showPercent = true,
 }: IProgressBarProps): React.ReactElement {
-  const [bounceTick, setBounceTick] = useState(0);
-
-  useEffect(() => {
-    if (progress !== undefined) return;
-    const timer = setInterval(() => {
-      setBounceTick((prev) => (prev + 1) % (width * 2));
-    }, 80);
-    return () => {
-      clearInterval(timer);
-    };
-  }, [progress, width]);
+  const bounceTick = useAnimationTick(140, progress === undefined);
 
   if (progress !== undefined) {
     const clamped = Math.max(0, Math.min(100, progress));

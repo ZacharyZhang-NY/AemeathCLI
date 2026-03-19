@@ -21,7 +21,9 @@ export function createInstallCommand(): Command {
         const loader = new ProfileLoader();
         const name = await loader.install(source);
         process.stdout.write(`${pc.green(`Profile "${name}" installed successfully.`)}\n`);
-        process.stdout.write(`${pc.dim(`Use with: aemeathcli launch --profile ${name}`)}\n`);
+        process.stdout.write(
+          `${pc.dim("Stored in the agent profile library for swarm orchestration and advanced profile-driven workflows.")}\n`,
+        );
       } catch (error: unknown) {
         const msg = error instanceof Error ? error.message : String(error);
         process.stderr.write(`${pc.red(`Install failed: ${msg}`)}\n`);

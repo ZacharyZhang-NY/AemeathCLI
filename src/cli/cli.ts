@@ -14,9 +14,6 @@ import { createReviewCommand } from "./commands/review.js";
 import { createTestCommand } from "./commands/test.js";
 import { createConfigCommand } from "./commands/config.js";
 import { createAuthCommand, createLoginCommand } from "./commands/auth.js";
-import { createLaunchCommand } from "./commands/launch.js";
-import { createShutdownCommand } from "./commands/shutdown.js";
-import { createInfoCommand } from "./commands/info.js";
 import { createInstallCommand } from "./commands/install.js";
 import { createTeamCommand } from "./commands/team.js";
 import { runChatCommand } from "./chat-runner.js";
@@ -24,6 +21,7 @@ import type { IIPCMessage } from "../types/index.js";
 import type { ProviderRegistry } from "../providers/registry.js";
 import type { ToolRegistry } from "../tools/registry.js";
 import type { IChatMessage, IToolCall } from "../types/message.js";
+import type { IToolExecutionContext, PermissionMode } from "../types/tool.js";
 import { PACKAGE_VERSION } from "../version.js";
 
 function getFlagValue(args: readonly string[], flag: string): string | undefined {
@@ -54,6 +52,48 @@ function sendAgentIPC(method: IIPCMessage["method"], params: Record<string, unkn
   }
 }
 
+function isPermissionMode(value: string | undefined): value is PermissionMode {
+  return value === "strict" || value === "standard" || value === "permissive";
+}
+
+function parseStringArrayEnv(value: string | undefined): string[] | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  try {
+    const parsed: unknown = JSON.parse(value);
+    if (Array.isArray(parsed) && parsed.every((item) => typeof item === "string")) {
+      return [...parsed];
+    }
+  } catch {
+    // Ignore malformed env input and fall back to defaults
+  }
+
+  return undefined;
+}
+
+function getAgentToolContext(): IToolExecutionContext {
+  const projectRoot = process.env["AEMEATHCLI_TOOL_PROJECT_ROOT"] ?? process.cwd();
+  const workingDirectory =
+    process.env["AEMEATHCLI_TOOL_WORKING_DIRECTORY"] ?? projectRoot;
+  const allowedPaths =
+    parseStringArrayEnv(process.env["AEMEATHCLI_TOOL_ALLOWED_PATHS"]) ?? [projectRoot];
+  const blockedCommands =
+    parseStringArrayEnv(process.env["AEMEATHCLI_TOOL_BLOCKED_COMMANDS"]) ?? [];
+  const permissionMode = isPermissionMode(process.env["AEMEATHCLI_TOOL_PERMISSION_MODE"])
+    ? process.env["AEMEATHCLI_TOOL_PERMISSION_MODE"]
+    : "standard";
+
+  return {
+    projectRoot,
+    workingDirectory,
+    permissionMode,
+    allowedPaths,
+    blockedCommands,
+  };
+}
+
 async function maybeRunAgentMode(args: readonly string[]): Promise<boolean> {
   if (!args.includes("--agent") && process.env["AEMEATHCLI_AGENT_MODE"] !== "1") {
     return false;
@@ -64,6 +104,7 @@ async function maybeRunAgentMode(args: readonly string[]): Promise<boolean> {
   const model = getFlagValue(args, "--model") ?? "claude-sonnet-4-6";
   const role = getFlagValue(args, "--role") ?? "coding";
   const agentId = process.env["AEMEATHCLI_AGENT_ID"] ?? randomUUID();
+  const toolContext = getAgentToolContext();
 
   // Lazily-initialized provider registry (shared across tasks for this agent)
   let registryPromise: Promise<ProviderRegistry> | undefined;
@@ -84,13 +125,7 @@ async function maybeRunAgentMode(args: readonly string[]): Promise<boolean> {
     if (!toolRegistryPromise) {
       toolRegistryPromise = import("../tools/index.js").then(
         ({ createDefaultRegistry: createToolReg }) =>
-          createToolReg({
-            projectRoot: process.cwd(),
-            workingDirectory: process.cwd(),
-            permissionMode: "permissive" as const,
-            allowedPaths: [process.cwd()],
-            blockedCommands: [],
-          }),
+          createToolReg(toolContext),
       );
     }
     return toolRegistryPromise;
@@ -166,14 +201,6 @@ async function maybeRunAgentMode(args: readonly string[]): Promise<boolean> {
         agentId, taskId, model,
         content: `${toolDefs.length} tools loaded. Sending request to ${model}...\n`,
       });
-      const toolContext = {
-        projectRoot: process.cwd(),
-        workingDirectory: process.cwd(),
-        permissionMode: "permissive" as const,
-        allowedPaths: [process.cwd()],
-        blockedCommands: [] as string[],
-      };
-
       const systemPrompt = `You are ${agentName}, an AI agent in team "${teamName}" with the role of ${role}. You have access to tools for reading files, writing files, editing code, searching, and executing shell commands. Use these tools to complete the assigned task thoroughly. Focus only on your specific role.`;
 
       const messages: IChatMessage[] = [{
@@ -358,7 +385,7 @@ async function main(): Promise<void> {
         "  aemeathcli",
         "  aemeathcli \"explain this repository\"",
         "  aemeathcli chat --print \"summarize the latest diff\"",
-        "  aemeathcli launch --task \"fix the failing tests\"",
+        "  aemeathcli    # use Shift+Tab inside the TUI to switch into swarm mode",
       ].join("\n"),
     );
 
@@ -371,11 +398,6 @@ async function main(): Promise<void> {
   program.addCommand(createAuthCommand());
   program.addCommand(createLoginCommand());
   program.addCommand(createTeamCommand());
-
-  // Orchestrator commands
-  program.addCommand(createLaunchCommand());
-  program.addCommand(createShutdownCommand());
-  program.addCommand(createInfoCommand());
   program.addCommand(createInstallCommand());
 
   // Default action (no subcommand)

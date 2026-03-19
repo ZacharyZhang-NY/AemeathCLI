@@ -1,12 +1,11 @@
 /**
- * Multi-model split panel layout for team mode.
- * Tab-based agent switching with color-coded streaming output,
- * tool call highlighting, gradient spinners, and activity status.
+ * Multi-agent hub-and-spoke layout for fallback TUI mode.
+ * The sponsoring master agent stays on the left half, while worker agents
+ * remain visible in a stacked right column.
  */
 
 import React from "react";
 import { Box, Text, useInput } from "ink";
-import { GradientSpinner } from "./GradientSpinner.js";
 import { colors } from "../theme.js";
 import type { IAgentState } from "../../types/index.js";
 
@@ -57,90 +56,159 @@ function statusIndicator(status: string): string {
   }
 }
 
-const MAX_OUTPUT_LINES = 40;
-
 function classifyLine(
   line: string,
 ): "tool" | "result" | "error" | "text" | "empty" {
   if (line.length === 0) return "empty";
-  if (line.startsWith("\u2699") || line.startsWith("\u2699\uFE0F"))
-    return "tool";
-  if (line.startsWith("  \u2192") || line.startsWith("  \u2192")) return "result";
-  if (line.startsWith("Error:") || line.startsWith("Stream error:"))
-    return "error";
+  if (line.startsWith("\u2699") || line.startsWith("\u2699\uFE0F")) return "tool";
+  if (line.startsWith("  \u2192")) return "result";
+  if (line.startsWith("Error:") || line.startsWith("Stream error:")) return "error";
   return "text";
 }
 
-function extractLastActivity(output: string): string | undefined {
+function renderLine(line: string, key: string): React.ReactElement {
+  const type = classifyLine(line);
+  switch (type) {
+    case "tool":
+      return (
+        <Text key={key} color={colors.role.tool}>
+          {line}
+        </Text>
+      );
+    case "result":
+      return (
+        <Text key={key} color={colors.text.muted}>
+          {line}
+        </Text>
+      );
+    case "error":
+      return (
+        <Text key={key} color={colors.status.error} bold>
+          {line}
+        </Text>
+      );
+    case "empty":
+      return <Text key={key}>{" "}</Text>;
+    default:
+      return (
+        <Text key={key} wrap="wrap">
+          {line}
+        </Text>
+      );
+  }
+}
+
+interface IVisibleLine {
+  readonly absoluteIndex: number;
+  readonly content: string;
+}
+
+function getVisibleLines(output: string, maxLines: number): readonly IVisibleLine[] {
   const lines = output.split("\n");
-  for (let i = lines.length - 1; i >= 0; i--) {
-    const line = lines[i];
-    if (line === undefined) continue;
+  const startIndex = Math.max(0, lines.length - maxLines);
+  return lines.slice(startIndex).map((content, index) => ({
+    absoluteIndex: startIndex + index,
+    content,
+  }));
+}
+
+function getLastActivity(output: string): string | undefined {
+  const lines = output.split("\n");
+  for (let index = lines.length - 1; index >= 0; index--) {
+    const line = lines[index];
+    if (!line) continue;
     const trimmed = line.trim();
     if (trimmed.length === 0) continue;
     const type = classifyLine(trimmed);
-    if (type === "tool" || type === "result") return trimmed;
+    if (type === "tool" || type === "result" || type === "error") {
+      return trimmed;
+    }
   }
   return undefined;
 }
 
-function AgentOutput({
+function AgentFrameComponent({
+  agent,
   output,
-  isActive,
+  titlePrefix,
+  isFocused,
+  maxLines,
 }: {
+  readonly agent: IAgentState;
   readonly output: string;
-  readonly isActive: boolean;
+  readonly titlePrefix: string;
+  readonly isFocused: boolean;
+  readonly maxLines: number;
 }): React.ReactElement {
-  const lines = output.split("\n");
-  const truncated = lines.length > MAX_OUTPUT_LINES;
-  const visible = truncated ? lines.slice(-MAX_OUTPUT_LINES) : lines;
+  const previewLines = React.useMemo(
+    () => getVisibleLines(output, maxLines),
+    [maxLines, output],
+  );
+  const lastActivity = React.useMemo(
+    () => getLastActivity(output),
+    [output],
+  );
 
   return (
-    <Box flexDirection="column">
-      {truncated ? (
-        <Text color={colors.text.muted} dimColor>
-          {"  "}({lines.length - MAX_OUTPUT_LINES} lines hidden)
+    <Box
+      flexDirection="column"
+      borderStyle={isFocused ? "round" : "single"}
+      borderColor={isFocused ? colors.status.active : colors.border.dim}
+      paddingX={1}
+      paddingY={0}
+      marginBottom={1}
+    >
+      <Box>
+        <Text color={getStatusColor(agent.status)}>{statusIndicator(agent.status)} </Text>
+        <Text color={colors.status.active} bold>
+          {titlePrefix} {agent.config.name}
         </Text>
+        <Text color={colors.text.muted}>
+          {" "}
+          {"\u2014"} {agent.config.role} {"\u00B7"} {shortModelLabel(agent.config.model)}
+        </Text>
+      </Box>
+      {lastActivity ? (
+        <Box>
+          <Text color={colors.text.muted} dimColor>
+            {lastActivity.length > 72 ? `${lastActivity.slice(0, 72)}\u2026` : lastActivity}
+          </Text>
+        </Box>
       ) : null}
-      {visible.map((line, i) => {
-        const type = classifyLine(line);
-        switch (type) {
-          case "tool":
-            return (
-              <Text key={i} color={colors.role.tool}>
-                {line}
-              </Text>
-            );
-          case "result":
-            return (
-              <Text key={i} color={colors.text.muted}>
-                {line}
-              </Text>
-            );
-          case "error":
-            return (
-              <Text key={i} color={colors.status.error} bold>
-                {line}
-              </Text>
-            );
-          case "empty":
-            return <Text key={i}>{" "}</Text>;
-          default:
-            return (
-              <Text key={i} wrap="wrap">
-                {line}
-              </Text>
-            );
-        }
-      })}
-      {isActive ? (
-        <Box marginTop={0}>
-          <GradientSpinner variant="braille" label="Working\u2026" />
+      <Box flexDirection="column" marginTop={1}>
+        {previewLines.length > 0
+          ? previewLines.map((line) =>
+            renderLine(
+              line.content,
+              `${agent.config.agentId}-${line.absoluteIndex}`,
+            ))
+          : (
+            <Text color={colors.text.muted}>
+              {agent.status === "active" ? "Initializing\u2026" : "Waiting for work\u2026"}
+            </Text>
+          )}
+      </Box>
+      {agent.status === "active" ? (
+        <Box marginTop={1}>
+          <Text color={colors.text.muted}>
+            {titlePrefix === "Master" ? "Coordinating\u2026" : "Working\u2026"}
+          </Text>
         </Box>
       ) : null}
     </Box>
   );
 }
+
+const AgentFrame = React.memo(
+  AgentFrameComponent,
+  (previousProps, nextProps) => (
+    previousProps.agent === nextProps.agent &&
+    previousProps.output === nextProps.output &&
+    previousProps.titlePrefix === nextProps.titlePrefix &&
+    previousProps.isFocused === nextProps.isFocused &&
+    previousProps.maxLines === nextProps.maxLines
+  ),
+);
 
 export function SplitPanel({
   agents,
@@ -151,141 +219,86 @@ export function SplitPanel({
   useInput((input, key) => {
     if (key.tab) {
       onSelectAgent((activeAgentIndex + 1) % agents.length);
+      return;
     }
-    const numKey = parseInt(input, 10);
+
+    const numericKey = Number.parseInt(input, 10);
     if (
-      !isNaN(numKey) &&
-      numKey >= 1 &&
-      numKey <= agents.length &&
+      !Number.isNaN(numericKey) &&
+      numericKey >= 1 &&
+      numericKey <= agents.length &&
       key.ctrl
     ) {
-      onSelectAgent(numKey - 1);
+      onSelectAgent(numericKey - 1);
     }
   });
 
-  const activeAgent = agents[activeAgentIndex];
-  const activeOutput = activeAgent
-    ? agentOutputs.get(activeAgent.config.agentId) ?? ""
-    : "";
-  const lastActivity =
-    activeOutput.length > 0 ? extractLastActivity(activeOutput) : undefined;
+  const [masterAgent, ...workerAgents] = agents;
+  const focusedAgent = agents[activeAgentIndex];
+
+  if (!masterAgent) {
+    return (
+      <Box flexGrow={1} borderStyle="round" borderColor={colors.border.dim} paddingX={1}>
+        <Text color={colors.text.muted}>No agents active</Text>
+      </Box>
+    );
+  }
+
+  const masterOutput = agentOutputs.get(masterAgent.config.agentId) ?? "";
 
   return (
     <Box flexDirection="column" flexGrow={1}>
-      {/* Tab bar */}
-      <Box>
-        {agents.map((agent, index) => {
-          const isActive = index === activeAgentIndex;
-          const sColor = getStatusColor(agent.status);
-          const indicator = statusIndicator(agent.status);
-          const modelShort = shortModelLabel(agent.config.model);
-          const typeLabel =
-            agent.config.agentType.charAt(0).toUpperCase() +
-            agent.config.agentType.slice(1);
-          return (
-            <Box
-              key={agent.config.agentId}
-              borderStyle={isActive ? "bold" : "single"}
-              borderColor={isActive ? colors.status.active : colors.border.dim}
-              paddingX={1}
-            >
-              <Text color={sColor}>{indicator} </Text>
-              <Text bold={isActive}>{typeLabel}</Text>
-              <Text color={colors.text.muted} dimColor>
-                {" "}
-                {modelShort}
-              </Text>
-            </Box>
-          );
-        })}
+      <Box marginBottom={1}>
+        <Text color={colors.text.muted}>Focus: </Text>
+        <Text color={colors.status.active} bold>
+          {focusedAgent?.config.name ?? masterAgent.config.name}
+        </Text>
+        <Text color={colors.text.muted}>  </Text>
+        <Text color={colors.status.active} bold>Tab</Text>
+        <Text color={colors.text.muted}> cycle  </Text>
+        <Text color={colors.status.active} bold>Ctrl+1</Text>
+        <Text color={colors.text.muted}>-</Text>
+        <Text color={colors.status.active} bold>{agents.length}</Text>
+        <Text color={colors.text.muted}> jump  </Text>
+        <Text color={colors.status.warning} bold>/team stop</Text>
+        <Text color={colors.text.muted}> exit swarm</Text>
       </Box>
 
-      {/* Keybinding hints */}
-      <Box flexDirection="column" marginY={0}>
-        <Box>
-          <Text color={colors.text.muted}>{"  "}</Text>
-          <Text color={colors.status.active} bold>Tab</Text>
-          <Text color={colors.text.muted}> next agent  </Text>
-          <Text color={colors.status.active} bold>Ctrl+1</Text>
-          <Text color={colors.text.muted}>-</Text>
-          <Text color={colors.status.active} bold>{agents.length}</Text>
-          <Text color={colors.text.muted}> jump  </Text>
-          <Text color={colors.status.warning} bold>/team stop</Text>
-          <Text color={colors.text.muted}> exit team</Text>
+      <Box flexGrow={1}>
+        <Box flexBasis="50%" flexDirection="column" paddingRight={1}>
+          <AgentFrame
+            agent={masterAgent}
+            output={masterOutput}
+            titlePrefix="Master"
+            isFocused={activeAgentIndex === 0}
+            maxLines={28}
+          />
         </Box>
-        <Box>
-          <Text color={colors.text.muted}>
-            {"  "}Type below to send a message to the active agent
-          </Text>
+
+        <Box flexBasis="50%" flexDirection="column" paddingLeft={1}>
+          {workerAgents.length > 0 ? (
+            workerAgents.map((agent, index) => (
+              <AgentFrame
+                key={agent.config.agentId}
+                agent={agent}
+                output={agentOutputs.get(agent.config.agentId) ?? ""}
+                titlePrefix="Worker"
+                isFocused={activeAgentIndex === index + 1}
+                maxLines={8}
+              />
+            ))
+          ) : (
+            <Box borderStyle="single" borderColor={colors.border.dim} paddingX={1}>
+              <Text color={colors.text.muted}>No worker agents in this swarm.</Text>
+            </Box>
+          )}
         </Box>
       </Box>
 
-      {/* Active agent output */}
-      <Box
-        flexDirection="column"
-        flexGrow={1}
-        paddingX={1}
-        marginTop={1}
-        borderStyle="round"
-        borderColor={colors.border.dim}
-      >
-        {activeAgent ? (
-          <>
-            <Box>
-              <Text color={colors.status.active} bold>
-                {"\u2726"} {activeAgent.config.name}
-              </Text>
-              <Text color={colors.text.muted}>
-                {" "}
-                {"\u2014"} {activeAgent.config.role}{" "}
-              </Text>
-              <Text color={getStatusColor(activeAgent.status)}>
-                [{activeAgent.status}]
-              </Text>
-            </Box>
-            {lastActivity ? (
-              <Box>
-                <Text color={colors.text.muted} dimColor>
-                  {"  "}
-                  {lastActivity.length > 80
-                    ? lastActivity.slice(0, 80) + "\u2026"
-                    : lastActivity}
-                </Text>
-              </Box>
-            ) : null}
-            <Box
-              borderStyle="single"
-              borderColor={colors.border.dim}
-              borderTop
-              borderBottom={false}
-              borderLeft={false}
-              borderRight={false}
-              marginY={0}
-            />
-
-            {activeOutput.length > 0 ? (
-              <Box flexDirection="column" marginTop={0}>
-                <AgentOutput
-                  output={activeOutput}
-                  isActive={activeAgent.status === "active"}
-                />
-              </Box>
-            ) : activeAgent.status === "active" ? (
-              <Box marginTop={1}>
-                <GradientSpinner
-                  variant="dots"
-                  label="Initializing agent\u2026"
-                />
-              </Box>
-            ) : (
-              <Text color={colors.status.warning}>
-                {"\u231B"} Waiting for task\u2026
-              </Text>
-            )}
-          </>
-        ) : (
-          <Text color={colors.text.muted}>No agents active</Text>
-        )}
+      <Box marginTop={0}>
+        <Text color={colors.text.muted}>
+          Input is sent to the focused agent. The master agent remains pinned to the left pane.
+        </Text>
       </Box>
     </Box>
   );

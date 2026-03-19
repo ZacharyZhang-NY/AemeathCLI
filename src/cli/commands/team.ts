@@ -10,7 +10,7 @@ export function createTeamCommand(): Command {
       process.stderr.write(
         pc.yellow(
           `The top-level \`${attempted}\` command is deprecated.\n` +
-          "Use `aemeathcli launch` for orchestrator sessions or `/team` inside interactive chat.\n",
+          "Start `aemeathcli` (or `ac`), press Shift+Tab for swarm mode, or use `/team` inside the interactive session.\n",
         ),
       );
       process.exitCode = 2;

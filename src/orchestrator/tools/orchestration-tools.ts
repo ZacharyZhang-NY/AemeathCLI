@@ -15,7 +15,7 @@
 
 import type { IToolRegistration, IToolResult, ToolCategory } from "../../types/index.js";
 import type { IToolDefinition } from "../../types/message.js";
-import type { PermissionMode } from "../../types/tool.js";
+import type { IToolExecutionContext } from "../../types/tool.js";
 import type { WorkerManager } from "../worker-manager.js";
 import type { ProfileLoader } from "../profiles/profile-loader.js";
 import type { CliProviderType } from "../constants.js";
@@ -135,7 +135,7 @@ function createHandoffTool(
   return {
     definition,
     category: ORCH_CATEGORY,
-    requiresApproval: (_mode: PermissionMode, _args: Record<string, unknown>) => false,
+    requiresApproval: (_context: IToolExecutionContext, _args: Record<string, unknown>) => false,
     execute: async (args: Record<string, unknown>): Promise<IToolResult> => {
       const agentProfile = args["agent_profile"] as string;
       const message = args["message"] as string;
@@ -227,7 +227,7 @@ function createAssignTool(
   return {
     definition,
     category: ORCH_CATEGORY,
-    requiresApproval: (_mode: PermissionMode, _args: Record<string, unknown>) => false,
+    requiresApproval: (_context: IToolExecutionContext, _args: Record<string, unknown>) => false,
     execute: async (args: Record<string, unknown>): Promise<IToolResult> => {
       const agentProfile = args["agent_profile"] as string;
       const message = args["message"] as string;
@@ -290,7 +290,7 @@ function createCollectResultsTool(
   return {
     definition,
     category: ORCH_CATEGORY,
-    requiresApproval: (_mode: PermissionMode, _args: Record<string, unknown>) => false,
+    requiresApproval: (_context: IToolExecutionContext, _args: Record<string, unknown>) => false,
     execute: async (args: Record<string, unknown>): Promise<IToolResult> => {
       const rawIds = args["terminal_ids"] as string;
       const ids = rawIds.split(",").map((s) => s.trim()).filter((s) => s.length > 0);
@@ -381,7 +381,7 @@ function createSendMessageTool(
   return {
     definition,
     category: ORCH_CATEGORY,
-    requiresApproval: (_mode: PermissionMode, _args: Record<string, unknown>) => false,
+    requiresApproval: (_context: IToolExecutionContext, _args: Record<string, unknown>) => false,
     execute: async (args: Record<string, unknown>): Promise<IToolResult> => {
       const tid = args["terminal_id"] as string;
       const msg = args["message"] as string;
@@ -434,7 +434,7 @@ function createListWorkersTool(
   return {
     definition,
     category: ORCH_CATEGORY,
-    requiresApproval: (_mode: PermissionMode, _args: Record<string, unknown>) => false,
+    requiresApproval: (_context: IToolExecutionContext, _args: Record<string, unknown>) => false,
     execute: (_args: Record<string, unknown>): Promise<IToolResult> => {
       const terminals = workerManager.state.listTerminals(
         workerManager.sessionId,

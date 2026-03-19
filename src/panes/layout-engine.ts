@@ -104,9 +104,7 @@ export class LayoutEngine {
    */
   resolveAutoLayout(paneCount: number): Exclude<PaneLayout, "auto"> {
     if (paneCount <= 1) return "horizontal";
-    if (paneCount === 2) return "horizontal";
-    if (paneCount <= 4) return "grid";
-    return "grid";
+    return "hub-spoke";
   }
 
   /**
@@ -139,6 +137,8 @@ export class LayoutEngine {
         return { gridRows: paneCount, gridCols: 1 };
       case "grid":
         return this.computeGridSize(paneCount);
+      case "hub-spoke":
+        return { gridRows: Math.max(1, paneCount - 1), gridCols: 2 };
     }
   }
 
@@ -176,7 +176,48 @@ export class LayoutEngine {
         return this.computeVerticalLayout(panes);
       case "grid":
         return this.computeGridLayout(panes, paneCount);
+      case "hub-spoke":
+        return this.computeHubSpokeLayout(panes);
     }
+  }
+
+  private computeHubSpokeLayout(panes: readonly IPaneConfig[]): IPaneGeometry[] {
+    const [leaderPane, ...workerPanes] = panes;
+    if (!leaderPane) {
+      return [];
+    }
+
+    const geometries: IPaneGeometry[] = [
+      {
+        paneId: leaderPane.paneId,
+        row: 0,
+        col: 0,
+        widthPercent: workerPanes.length > 0 ? 50 : 100,
+        heightPercent: 100,
+        splitDirection: "none",
+      },
+    ];
+
+    if (workerPanes.length === 0) {
+      return geometries;
+    }
+
+    const workerHeightPercent = Math.floor(100 / workerPanes.length);
+    for (const [index, pane] of workerPanes.entries()) {
+      geometries.push({
+        paneId: pane.paneId,
+        row: index,
+        col: 1,
+        widthPercent: 50,
+        heightPercent:
+          index === workerPanes.length - 1
+            ? 100 - workerHeightPercent * (workerPanes.length - 1)
+            : workerHeightPercent,
+        splitDirection: index === 0 ? "horizontal" : "vertical",
+      });
+    }
+
+    return geometries;
   }
 
   /**

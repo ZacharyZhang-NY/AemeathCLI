@@ -5,7 +5,7 @@
 
 import { writeFile, mkdir, stat } from "node:fs/promises";
 import { dirname, extname } from "node:path";
-import type { IToolRegistration, PermissionMode } from "../types/tool.js";
+import type { IToolExecutionContext, IToolRegistration } from "../types/tool.js";
 import type { IToolResult } from "../types/message.js";
 import { isPathAllowed, validatePath } from "../utils/sanitizer.js";
 import { logger } from "../utils/logger.js";
@@ -24,17 +24,6 @@ function isConfigFile(filePath: string): boolean {
   const ext = extname(filePath).toLowerCase();
   const base = filePath.split("/").pop() ?? "";
   return CONFIG_EXTENSIONS.has(ext) || SENSITIVE_FILENAMES.has(base);
-}
-
-let projectRoot = process.cwd();
-let allowedPaths: readonly string[] = [projectRoot];
-
-export function setWriteProjectRoot(root: string): void {
-  projectRoot = root;
-}
-
-export function setWriteAllowedPaths(paths: readonly string[]): void {
-  allowedPaths = paths;
 }
 
 export function createWriteTool(): IToolRegistration {
@@ -59,11 +48,14 @@ export function createWriteTool(): IToolRegistration {
       ],
     },
     category: "file",
-    requiresApproval: (mode: PermissionMode, _args: Record<string, unknown>): boolean => {
+    requiresApproval: (context: IToolExecutionContext, _args: Record<string, unknown>): boolean => {
       // Write always requires approval in strict and standard modes
-      return mode === "strict" || mode === "standard";
+      return context.permissionMode === "strict" || context.permissionMode === "standard";
     },
-    execute: async (args: Record<string, unknown>): Promise<IToolResult> => {
+    execute: async (
+      args: Record<string, unknown>,
+      context: IToolExecutionContext,
+    ): Promise<IToolResult> => {
       const filePath = args["file_path"];
       const content = args["content"];
 
@@ -84,6 +76,9 @@ export function createWriteTool(): IToolRegistration {
           isError: true,
         };
       }
+
+      const projectRoot = context.projectRoot;
+      const allowedPaths = context.allowedPaths;
 
       let resolvedPath: string;
       try {

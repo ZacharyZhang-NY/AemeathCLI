@@ -34,6 +34,7 @@ const BUILTIN_STORE = existsSync(DIST_BUILTIN_STORE) ? DIST_BUILTIN_STORE : SOUR
 
 /** Per-user override directory. */
 const USER_STORE: string = join(getAemeathHome(), "agent-store");
+const MAX_PROFILE_BYTES = 64 * 1024;
 
 // ── Frontmatter Shape ────────────────────────────────────────────────────
 
@@ -41,6 +42,27 @@ interface ProfileFrontmatter {
   name?: string;
   description?: string;
   provider?: string;
+}
+
+function sanitizeProfileName(name: string): string {
+  const normalized = name
+    .trim()
+    .replace(/\.md$/iu, "")
+    .replace(/[^a-zA-Z0-9._-]+/gu, "-")
+    .replace(/^-+/u, "")
+    .replace(/-+/gu, "-");
+
+  if (normalized.length === 0 || normalized === "." || normalized === "..") {
+    throw new Error("Profile name must contain at least one alphanumeric character");
+  }
+
+  return normalized;
+}
+
+function assertProfileSize(content: string, source: string): void {
+  if (Buffer.byteLength(content, "utf-8") > MAX_PROFILE_BYTES) {
+    throw new Error(`Profile is too large: ${source}`);
+  }
 }
 
 // ── ProfileLoader ────────────────────────────────────────────────────────
@@ -112,35 +134,41 @@ export class ProfileLoader {
    */
   async install(source: string): Promise<string> {
     let content: string;
-    let fileName: string;
 
     if (source.startsWith("http://") || source.startsWith("https://")) {
-      const response = await fetch(source);
+      const url = new URL(source);
+      if (url.protocol !== "https:") {
+        throw new Error("Remote profile installation requires HTTPS");
+      }
+
+      const response = await fetch(url);
       if (!response.ok) {
         throw new Error(`Failed to fetch profile: ${response.statusText}`);
       }
+
+      const contentLength = response.headers.get("content-length");
+      if (contentLength !== null && Number(contentLength) > MAX_PROFILE_BYTES) {
+        throw new Error("Remote profile exceeds the maximum supported size");
+      }
+
       content = await response.text();
-      const url = new URL(source);
-      fileName = basename(url.pathname);
     } else {
       if (!existsSync(source)) {
         throw new Error(`Profile source file not found: ${source}`);
       }
       content = readFileSync(source, "utf-8");
-      fileName = basename(source);
     }
 
-    if (!fileName.endsWith(".md")) {
-      fileName += ".md";
-    }
+    assertProfileSize(content, source);
 
     // Validate that the content is a valid profile
-    this.parseProfile(content, source);
+    const profile = this.parseProfile(content, source);
+    const profileName = sanitizeProfileName(profile.name);
 
-    const destPath = join(USER_STORE, fileName);
+    const destPath = join(USER_STORE, `${profileName}.md`);
     writeFileSync(destPath, content, "utf-8");
 
-    return basename(fileName, ".md");
+    return profileName;
   }
 
   /**
@@ -177,7 +205,7 @@ export class ProfileLoader {
     const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/);
     if (!match) {
       // No frontmatter — treat entire content as system prompt
-      const name = basename(sourcePath, ".md");
+      const name = sanitizeProfileName(basename(sourcePath, ".md"));
       return {
         name,
         description: name,
@@ -187,6 +215,9 @@ export class ProfileLoader {
 
     const rawFrontmatter = match[1] || "";
     const body = (match[2] || "").trim();
+    if (body.length === 0) {
+      throw new Error(`Profile body is empty: ${sourcePath}`);
+    }
 
     const frontmatter = parseYaml(rawFrontmatter) as ProfileFrontmatter;
 
@@ -197,7 +228,7 @@ export class ProfileLoader {
         : undefined;
 
     return {
-      name: frontmatter.name ?? basename(sourcePath, ".md"),
+      name: sanitizeProfileName(frontmatter.name ?? basename(sourcePath, ".md")),
       description: frontmatter.description ?? "",
       provider: resolvedProvider,
       systemPrompt: body,

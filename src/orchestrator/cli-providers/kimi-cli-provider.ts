@@ -15,7 +15,7 @@ export class KimiCliProvider extends BaseCliProvider {
   readonly extractionRetries = 0;
 
   getStartCommand(): string {
-    return "kimi --yolo";
+    return "kimi";
   }
 
   getExitCommand(): string {

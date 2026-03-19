@@ -5,6 +5,7 @@
 import type { ProviderName, ModelRole, IRoleConfig } from "./model.js";
 import type { PermissionMode } from "./tool.js";
 import type { PaneLayout } from "./team.js";
+import type { CliProviderType } from "../orchestrator/constants.js";
 import { PACKAGE_VERSION } from "../version.js";
 
 // ── Provider Configuration ───────────────────────────────────────────────
@@ -31,6 +32,15 @@ export interface ISplitPanelConfig {
   readonly backend: PaneBackend;
   readonly defaultLayout: PaneLayout;
   readonly maxPanes: number;
+}
+
+// ── Swarm / Orchestrator Preferences ────────────────────────────────────
+
+export interface ISwarmConfig {
+  readonly onboardingComplete: boolean;
+  readonly detectedProviders: readonly CliProviderType[];
+  readonly primaryMasterProvider?: CliProviderType | undefined;
+  readonly fallbackMasterProviders: readonly CliProviderType[];
 }
 
 // ── Cost Configuration ───────────────────────────────────────────────────
@@ -74,6 +84,7 @@ export interface IGlobalConfig {
   readonly providers: Partial<Record<ProviderName, IProviderConfig>>;
   readonly permissions: IPermissionConfig;
   readonly splitPanel: ISplitPanelConfig;
+  readonly swarm: ISwarmConfig;
   readonly cost: ICostConfig;
   readonly telemetry: ITelemetryConfig;
   readonly oauth?: IOAuthConfig | undefined;
@@ -153,8 +164,14 @@ export const DEFAULT_CONFIG: IGlobalConfig = {
   splitPanel: {
     enabled: true,
     backend: "tmux",
-    defaultLayout: "auto",
+    defaultLayout: "hub-spoke",
     maxPanes: 6,
+  },
+  swarm: {
+    onboardingComplete: false,
+    detectedProviders: [],
+    primaryMasterProvider: undefined,
+    fallbackMasterProviders: [],
   },
   cost: {
     budgetWarning: 5.0,

@@ -17,6 +17,7 @@ import {
 } from "../utils/pathResolver.js";
 import { DEFAULT_CONFIG } from "../types/config.js";
 import type { IGlobalConfig } from "../types/config.js";
+import { CLI_PROVIDERS, type CliProviderType } from "../orchestrator/constants.js";
 
 // ── Zod Schemas ─────────────────────────────────────────────────────────
 
@@ -34,8 +35,20 @@ const PermissionConfigSchema = z.object({
 const SplitPanelConfigSchema = z.object({
   enabled: z.boolean(),
   backend: z.enum(["tmux", "iterm2"]),
-  defaultLayout: z.enum(["auto", "horizontal", "vertical", "grid"]),
+  defaultLayout: z.enum(["auto", "horizontal", "vertical", "grid", "hub-spoke"]),
   maxPanes: z.number().int().min(1).max(16),
+}).strict();
+
+const CLI_PROVIDER_ENUM_VALUES = [...CLI_PROVIDERS] as [
+  CliProviderType,
+  ...CliProviderType[],
+];
+
+const SwarmConfigSchema = z.object({
+  onboardingComplete: z.boolean(),
+  detectedProviders: z.array(z.enum(CLI_PROVIDER_ENUM_VALUES)),
+  primaryMasterProvider: z.enum(CLI_PROVIDER_ENUM_VALUES).optional(),
+  fallbackMasterProviders: z.array(z.enum(CLI_PROVIDER_ENUM_VALUES)),
 }).strict();
 
 const CostConfigSchema = z.object({
@@ -76,6 +89,7 @@ const GlobalConfigSchema = z.object({
   providers: z.record(z.string(), ProviderConfigSchema).optional(),
   permissions: PermissionConfigSchema.optional(),
   splitPanel: SplitPanelConfigSchema.optional(),
+  swarm: SwarmConfigSchema.optional(),
   cost: CostConfigSchema.optional(),
   telemetry: TelemetryConfigSchema.optional(),
   oauth: OAuthConfigSchema.optional(),
@@ -305,6 +319,10 @@ export class ConfigStore {
           ...this.globalConfig.splitPanel,
           ...(this.projectConfig.splitPanel ?? {}),
         },
+        swarm: {
+          ...this.globalConfig.swarm,
+          ...(this.projectConfig.swarm ?? {}),
+        },
         cost: {
           ...this.globalConfig.cost,
           ...(this.projectConfig.cost ?? {}),
@@ -348,6 +366,9 @@ export class ConfigStore {
       splitPanel: partial.splitPanel
         ? (partial.splitPanel as IGlobalConfig["splitPanel"])
         : DEFAULT_CONFIG.splitPanel,
+      swarm: partial.swarm
+        ? (partial.swarm as IGlobalConfig["swarm"])
+        : DEFAULT_CONFIG.swarm,
       cost: partial.cost
         ? (partial.cost as IGlobalConfig["cost"])
         : DEFAULT_CONFIG.cost,

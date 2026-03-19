@@ -12,7 +12,6 @@ interface IWelcomeScreenProps {
 }
 
 const MASCOT_LINES = [
-  "                    ",
   "         :-         ",
   "      ::::::::      ",
   "    .:.:::.::::     ",
@@ -36,10 +35,13 @@ const LOGO_LINES = [
 const TIPS = [
   { key: "/help", desc: "Show all commands" },
   { key: "/model", desc: "Switch AI model" },
-  { key: "Tab", desc: "Autocomplete" },
-  { key: "@file", desc: "Reference files" },
+  { key: "Shift+Tab", desc: "Cycle swarm/edit/chat modes" },
+  { key: "Tab", desc: "Autocomplete or focus next agent" },
+  { key: "@", desc: "Reference project files" },
   { key: "$skill", desc: "Invoke skills" },
 ] as const;
+
+const TIP_ROWS = [TIPS.slice(0, 2), TIPS.slice(2, 4), TIPS.slice(4)] as const;
 
 export function WelcomeScreen({
   version,
@@ -51,9 +53,10 @@ export function WelcomeScreen({
       paddingX={2}
       justifyContent="center"
       alignItems="center"
+      marginBottom={1}
     >
       {/* Mascot (left) + Logo (right), vertically centered via alignItems */}
-      <Box alignItems="center" marginBottom={1}>
+      <Box alignItems="center">
         <Box flexDirection="column" marginRight={2}>
           {MASCOT_LINES.map((line, i) => (
             <Text key={`m${i}`} color={BRAND_COLOR}>{line}</Text>
@@ -87,33 +90,31 @@ export function WelcomeScreen({
       ) : null}
 
       {/* Quick-start tips */}
-      <Box flexDirection="column" marginTop={1}>
+      <Box flexDirection="column">
         <Box marginBottom={1}>
           <Text color={colors.text.secondary} bold>
             Quick Start
           </Text>
         </Box>
-        {TIPS.map((tip) => (
-          <Box key={tip.key}>
-            <Text color={colors.status.active} bold>
-              {"  "}
-              {tip.key.padEnd(12)}
-            </Text>
-            <Text color={colors.text.muted}>{tip.desc}</Text>
+        {TIP_ROWS.map((row, rowIndex) => (
+          <Box key={`tip-row-${rowIndex}`}>
+            {row.map((tip, tipIndex) => (
+              <Box
+                key={tip.key}
+                flexDirection="column"
+                width={40}
+                marginRight={tipIndex < row.length - 1 ? 3 : 0}
+              >
+                <Text color={colors.status.active} bold>
+                  {tip.key}
+                </Text>
+                <Text color={colors.text.muted}>{tip.desc}</Text>
+              </Box>
+            ))}
           </Box>
         ))}
       </Box>
 
-      {/* Bottom prompt hint */}
-      <Box marginTop={2}>
-        <Text color={colors.text.muted}>
-          Type a message to begin, or press{" "}
-        </Text>
-        <Text color={colors.text.accent} bold>
-          /
-        </Text>
-        <Text color={colors.text.muted}> for commands</Text>
-      </Box>
     </Box>
   );
 }

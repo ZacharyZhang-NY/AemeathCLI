@@ -46,12 +46,13 @@
   "author": "AemeathCLI Team",
   "license": "MIT",
   "dependencies": {
-    "@ai-sdk/anthropic": "^1.0.0",
-    "@ai-sdk/google": "^1.0.0",
-    "@ai-sdk/openai": "^1.0.0",
+    "@ai-sdk/anthropic": "^2.0.70",
+    "@ai-sdk/google": "^2.0.62",
+    "@ai-sdk/openai": "^2.0.100",
     "@inquirer/prompts": "^7.0.0",
     "@modelcontextprotocol/sdk": "^1.0.0",
-    "ai": "^4.3.19",
+    "ai": "^5.0.156",
+    "better-sqlite3": "^11.0.0",
     "commander": "^13.0.0",
     "execa": "^9.0.0",
     "fast-glob": "^3.3.0",
@@ -64,8 +65,7 @@
     "react": "^18.3.0",
     "update-notifier": "^7.0.0",
     "yaml": "^2.4.0",
-    "zod": "^3.23.0",
-    "better-sqlite3": "^11.0.0"
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@testing-library/react": "^15.0.0",
@@ -73,6 +73,7 @@
     "@types/node": "^22.0.0",
     "@types/react": "^18.3.0",
     "@types/update-notifier": "^6.0.0",
+    "@vitest/coverage-v8": "^4.1.0",
     "eslint": "^9.0.0",
     "ink-testing-library": "^4.0.0",
     "prettier": "^3.4.0",

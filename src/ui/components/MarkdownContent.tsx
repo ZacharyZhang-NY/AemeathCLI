@@ -28,15 +28,22 @@ function parseBlocks(raw: string): IContentBlock[] {
   let i = 0;
 
   while (i < lines.length) {
-    const line = lines[i]!;
+    const line = lines[i];
+    if (line === undefined) {
+      break;
+    }
 
     // Fenced code block
     if (line.startsWith("```")) {
       const lang = line.slice(3).trim();
       const codeLines: string[] = [];
       i++;
-      while (i < lines.length && !lines[i]!.startsWith("```")) {
-        codeLines.push(lines[i]!);
+      while (i < lines.length) {
+        const currentLine = lines[i];
+        if (currentLine === undefined || currentLine.startsWith("```")) {
+          break;
+        }
+        codeLines.push(currentLine);
         i++;
       }
       blocks.push({ type: "code", content: codeLines.join("\n"), lang });
@@ -47,10 +54,16 @@ function parseBlocks(raw: string): IContentBlock[] {
     // ATX header (#–####)
     const headerMatch = line.match(/^(#{1,4})\s+(.+)$/);
     if (headerMatch) {
+      const hashes = headerMatch[1];
+      const headerContent = headerMatch[2];
+      if (hashes === undefined || headerContent === undefined) {
+        i++;
+        continue;
+      }
       blocks.push({
         type: "header",
-        content: headerMatch[2]!,
-        level: headerMatch[1]!.length,
+        content: headerContent,
+        level: hashes.length,
       });
       i++;
       continue;
@@ -66,8 +79,12 @@ function parseBlocks(raw: string): IContentBlock[] {
     // Blockquote (consecutive >-prefixed lines)
     if (line.startsWith("> ")) {
       const quoteLines: string[] = [];
-      while (i < lines.length && lines[i]!.startsWith("> ")) {
-        quoteLines.push(lines[i]!.slice(2));
+      while (i < lines.length) {
+        const quoteLine = lines[i];
+        if (quoteLine === undefined || !quoteLine.startsWith("> ")) {
+          break;
+        }
+        quoteLines.push(quoteLine.slice(2));
         i++;
       }
       blocks.push({ type: "blockquote", content: quoteLines.join("\n") });
@@ -78,7 +95,10 @@ function parseBlocks(raw: string): IContentBlock[] {
     if (/^\s*[-*+]\s/.test(line) || /^\s*\d+\.\s/.test(line)) {
       const listLines: string[] = [];
       while (i < lines.length) {
-        const l = lines[i]!;
+        const l = lines[i];
+        if (l === undefined) {
+          break;
+        }
         if (
           /^\s*[-*+]\s/.test(l) ||
           /^\s*\d+\.\s/.test(l) ||
@@ -97,7 +117,10 @@ function parseBlocks(raw: string): IContentBlock[] {
     // Plain text — accumulate until we hit a block-level construct
     const textLines: string[] = [];
     while (i < lines.length) {
-      const l = lines[i]!;
+      const l = lines[i];
+      if (l === undefined) {
+        break;
+      }
       if (
         l.startsWith("```") ||
         l.startsWith("#") ||
@@ -193,7 +216,7 @@ function InlineMarkdown({
     }
 
     // Plain text up to next special char
-    const nextSpecial = remaining.search(/[*`~\[]/);
+    const nextSpecial = remaining.search(/[[*`~]/);
     if (nextSpecial === -1) {
       segments.push(<Text key={key++}>{remaining}</Text>);
       break;
@@ -318,7 +341,7 @@ export function MarkdownContent({
   // Fast path: single plain-text block
   if (blocks.length === 1 && blocks[0]?.type === "text") {
     const text = blocks[0].content;
-    if (!/[*`~\[]/.test(text)) {
+    if (!/[[*`~]/.test(text)) {
       return <Text wrap="wrap">{text}</Text>;
     }
     return <InlineMarkdown text={text} />;

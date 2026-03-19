@@ -3,7 +3,7 @@
  * Zero trust for AI output — treat all model-generated content as untrusted
  */
 
-import { resolve, normalize } from "node:path";
+import { isAbsolute, normalize, relative, resolve } from "node:path";
 
 /**
  * Sanitize shell command arguments to prevent injection.
@@ -19,11 +19,10 @@ export function sanitizeShellArg(arg: string): string {
  * Prevents directory traversal attacks (PRD section 14.1).
  */
 export function validatePath(filePath: string, projectRoot: string): string {
-  const resolved = resolve(projectRoot, filePath);
-  const normalizedRoot = normalize(projectRoot);
-  const normalizedPath = normalize(resolved);
+  const normalizedRoot = normalize(resolve(projectRoot));
+  const normalizedPath = normalize(resolve(normalizedRoot, filePath));
 
-  if (!normalizedPath.startsWith(normalizedRoot)) {
+  if (!isSubPath(normalizedRoot, normalizedPath)) {
     throw new Error(
       `Path traversal detected: "${filePath}" resolves outside project root "${projectRoot}"`,
     );
@@ -40,11 +39,17 @@ export function isPathAllowed(
   allowedPaths: readonly string[],
   projectRoot: string,
 ): boolean {
-  const resolved = resolve(projectRoot, filePath);
+  const normalizedRoot = normalize(resolve(projectRoot));
+  const resolved = normalize(resolve(normalizedRoot, filePath));
   return allowedPaths.some((allowed) => {
-    const resolvedAllowed = resolve(projectRoot, allowed);
-    return resolved.startsWith(resolvedAllowed);
+    const resolvedAllowed = normalize(resolve(normalizedRoot, allowed));
+    return isSubPath(resolvedAllowed, resolved);
   });
+}
+
+function isSubPath(basePath: string, candidatePath: string): boolean {
+  const rel = relative(basePath, candidatePath);
+  return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
 }
 
 /**

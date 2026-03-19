@@ -9,6 +9,9 @@ import { colors } from "../theme.js";
 import type { IAutocompleteItem } from "../autocomplete-data.js";
 
 const MAX_VISIBLE_ITEMS = 8;
+const SCROLL_UP_LABEL = "▲";
+const SCROLL_DOWN_LABEL = "▼";
+const SELECTED_LABEL = "▸ ";
 
 interface IAutocompletePopupProps {
   readonly items: readonly IAutocompleteItem[];
@@ -48,7 +51,8 @@ export function AutocompletePopup({
       {/* Scroll-up indicator */}
       {hasLess ? (
         <Text color={colors.text.muted} dimColor>
-          {"  "}\u25B2 {scrollOffset} above
+          {"  "}
+          {SCROLL_UP_LABEL} {scrollOffset} above
         </Text>
       ) : null}
 
@@ -61,7 +65,7 @@ export function AutocompletePopup({
               color={isSelected ? colors.status.active : colors.text.primary}
               bold={isSelected}
             >
-              {isSelected ? "\u25B8 " : "  "}
+              {isSelected ? SELECTED_LABEL : "  "}
               {item.label}
             </Text>
             <Text color={colors.text.muted} dimColor>
@@ -75,7 +79,8 @@ export function AutocompletePopup({
       {/* Scroll-down indicator */}
       {hasMore ? (
         <Text color={colors.text.muted} dimColor>
-          {"  "}\u25BE {totalItems - scrollOffset - windowSize} more
+          {"  "}
+          {SCROLL_DOWN_LABEL} {totalItems - scrollOffset - windowSize} more
         </Text>
       ) : null}
     </Box>

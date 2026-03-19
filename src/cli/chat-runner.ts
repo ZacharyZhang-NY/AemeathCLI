@@ -46,16 +46,16 @@ function parseRole(role: string | undefined): ModelRole | undefined {
   throw new Error(`Unknown role "${role}". Valid roles: ${VALID_ROLES.join(", ")}`);
 }
 
-async function ensureFirstRunSetup(): Promise<void> {
-  const { hasGlobalConfig, runFirstRunSetup } = await import("./setup/first-run.js");
+async function ensureInteractiveConfig(): Promise<void> {
+  const { ensureDefaultConfig, hasGlobalConfig } = await import("./setup/first-run.js");
 
   if (!hasGlobalConfig()) {
-    await runFirstRunSetup();
+    ensureDefaultConfig();
   }
 }
 
 async function startInteractiveChat(options: IChatRunnerOptions): Promise<void> {
-  await ensureFirstRunSetup();
+  await ensureInteractiveConfig();
 
   const { startChatSession } = await import("../ui/App.js");
   await startChatSession({
@@ -121,7 +121,7 @@ async function runPlainChat(options: IChatRunnerOptions, message: string): Promi
 
     if (chunk.type === "tool_call") {
       throw new Error(
-        "Tool-calling output is not supported in plain mode. Use interactive chat or `aemeathcli launch --task`.",
+        "Tool-calling output is not supported in plain mode. Use the interactive TUI (`aemeathcli`) and switch into swarm mode with Shift+Tab.",
       );
     }
 

@@ -3,9 +3,10 @@
  * Uses a single flat brand color — no gradients.
  */
 
-import React, { useState, useEffect } from "react";
+import React from "react";
 import { Text } from "ink";
 import { BRAND_COLOR } from "../theme.js";
+import { useAnimationTick } from "../hooks/use-animation-tick.js";
 
 interface IGradientSpinnerProps {
   /** Text displayed after the spinner character */
@@ -24,11 +25,11 @@ const SPINNER_VARIANTS: Record<
 > = {
   dots: {
     frames: ["\u280B", "\u2819", "\u2839", "\u2838", "\u283C", "\u2834", "\u2826", "\u2827", "\u2807", "\u280F"],
-    interval: 80,
+    interval: 120,
   },
   braille: {
     frames: ["\u28FE", "\u28FD", "\u28FB", "\u28BF", "\u287F", "\u28DF", "\u28EF", "\u28F7"],
-    interval: 80,
+    interval: 120,
   },
   arc: {
     frames: ["\u25DC", "\u25E0", "\u25DD", "\u25DE", "\u25E1", "\u25DF"],
@@ -40,7 +41,7 @@ const SPINNER_VARIANTS: Record<
   },
   bounce: {
     frames: ["\u2801", "\u2802", "\u2804", "\u2840", "\u2880", "\u2820", "\u2810", "\u2808"],
-    interval: 80,
+    interval: 120,
   },
 };
 
@@ -50,19 +51,13 @@ export function GradientSpinner({
   variant = "dots",
   speed,
 }: IGradientSpinnerProps): React.ReactElement {
-  const [frame, setFrame] = useState(0);
-
-  const spinnerDef = SPINNER_VARIANTS[variant] ?? SPINNER_VARIANTS["dots"]!;
+  const spinnerDef = SPINNER_VARIANTS[variant] ?? SPINNER_VARIANTS["dots"];
+  if (!spinnerDef) {
+    throw new Error("Missing default spinner configuration");
+  }
   const interval = speed ?? spinnerDef.interval;
-
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setFrame((prev) => (prev + 1) % spinnerDef.frames.length);
-    }, interval);
-    return () => {
-      clearInterval(timer);
-    };
-  }, [spinnerDef.frames.length, interval]);
+  const tick = useAnimationTick(interval);
+  const frame = tick % spinnerDef.frames.length;
 
   return (
     <Text>

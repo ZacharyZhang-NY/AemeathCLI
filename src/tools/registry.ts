@@ -89,7 +89,7 @@ export class ToolRegistry implements IToolRegistry {
       };
     }
 
-    if (tool.requiresApproval(context.permissionMode, call.arguments)) {
+    if (tool.requiresApproval(context, call.arguments)) {
       return {
         toolCallId: call.id,
         name: call.name,
@@ -100,7 +100,7 @@ export class ToolRegistry implements IToolRegistry {
 
     try {
       logger.debug({ toolName: call.name, args: redactToolArgs(call.arguments) }, "Executing tool");
-      const result = await tool.execute(call.arguments);
+      const result = await tool.execute(call.arguments, context);
       return {
         ...result,
         toolCallId: call.id,

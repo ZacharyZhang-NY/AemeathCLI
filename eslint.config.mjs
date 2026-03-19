@@ -33,7 +33,7 @@ export default tseslint.config(
         "error",
         { allowNumber: true, allowBoolean: true },
       ],
-      "no-console": "warn",
+      "no-console": "error",
     },
   },
   {

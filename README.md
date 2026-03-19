@@ -90,7 +90,7 @@ That's it. AemeathCLI detects your project, picks the best model, and starts str
 
 - **Node.js** >= 20.0.0
 - **npm** >= 9 (or pnpm / yarn)
-- **tmux** (optional, for `launch --visual`)
+- **tmux** (optional, for external split-panel swarm panes)
 - Native build tools for Node modules such as `node-pty` and `better-sqlite3`
   - macOS: Xcode Command Line Tools
   - Linux: Python, make, and a C/C++ compiler
@@ -117,7 +117,7 @@ aemeathcli --version
 aemeathcli config init
 ```
 
-This launches an interactive setup wizard that walks you through provider authentication and initial configuration. For `launch`, configure API keys with `aemeathcli auth set-key <provider>` or the matching environment variables.
+This launches an interactive setup wizard that walks you through provider authentication, detects installed agent CLIs, and lets you choose the master provider used for swarm orchestration. SDK-backed swarm features still need `aemeathcli auth set-key <provider>` or matching environment variables when browser login is not enough.
 
 <br />
 
@@ -190,22 +190,26 @@ aemeathcli review src/auth/ src/api/middleware.ts
 aemeathcli test "Generate tests for the recent changes"
 ```
 
-### Orchestrator Mode
+### Swarm Mode
 
-The production orchestration surface is `launch`:
+Swarm orchestration now lives inside the default TUI:
 
 ```bash
-# Run one orchestrated task and exit
-aemeathcli launch --task "Refactor the authentication module"
+# Start the CLI
+aemeathcli
 
-# Start the interactive orchestrator REPL
-aemeathcli launch
-
-# Enable tmux visual mode when available
-aemeathcli launch --visual
+# Or start with a first task
+aemeathcli "Refactor the authentication module"
 ```
 
-The supervisor profile decomposes the task, spawns specialized workers, and collects results. Natural-language team design inside chat is still supported as an interactive UX pattern, but the documented CLI contract for orchestration is `launch`, `info`, and `shutdown`. `launch` requires a tool-calling-capable provider for the supervisor, so browser login alone is not enough; set an API key for the supervisor provider as well.
+Inside the TUI:
+
+- Press `Shift+Tab` to switch into swarm mode.
+- The onboarding flow detects supported native agent CLIs and stores your preferred master provider.
+- The master agent owns the left half of the split layout; worker agents stack on the right.
+- When tmux or iTerm2 is available, AemeathCLI can project the swarm into native panes while keeping the same hub-and-spoke model.
+
+SDK-backed swarm planning still needs a tool-calling-capable provider, so browser login alone may not be enough; configure an API key or environment variable for the provider you want to sponsor the swarm.
 
 ```
 ┌───────────────────────┬───────────────────────┐
@@ -288,11 +292,11 @@ Customize routing in `~/.aemeathcli/config.json`:
 
 ## Agent Teams
 
-Create parallel agent teams through the orchestrator. The supervisor profile delegates to specialized worker profiles, optional tmux panes launch when enabled, and workers coordinate via a hub-and-spoke model.
+Create parallel agent teams through the default swarm experience. The master agent sponsors specialized workers, optional tmux panes open when enabled, and every team follows a hub-and-spoke model.
 
 ### How It Works
 
-1. **Supervisor-led orchestration** -- Run `aemeathcli launch --task "..."` or `aemeathcli launch` and let the supervisor decompose the task.
+1. **Master-led orchestration** -- Start `aemeathcli`, press `Shift+Tab`, and describe the task. The configured master agent decomposes the work.
 2. **Profile-driven delegation** -- The supervisor chooses specialized worker profiles such as `developer`, `reviewer`, `tester`, and `architect`.
 3. **Split-panel mode** -- Each worker can get its own terminal pane (tmux today; interactive chat still supports natural-language team creation flows).
 4. **Hub-and-spoke coordination** -- A lead agent orchestrates the effort. Workers execute bounded tasks and results are synthesized by the supervisor.
@@ -348,11 +352,11 @@ Each agent runs a different model selected by the LLM based on role suitability:
 
 | Action | How |
 |:-------|:----|
-| Launch orchestrator | `aemeathcli launch` |
-| Run one task | `aemeathcli launch --task "Build X"` |
-| View sessions | `aemeathcli info --sessions` |
-| View workers | `aemeathcli info --workers` |
-| Stop a session | `aemeathcli shutdown --session <id>` |
+| Enter swarm mode | Start `aemeathcli` and press `Shift+Tab` |
+| Run one task | `aemeathcli "Build X"` then switch to swarm mode if needed |
+| Focus next agent | `Tab` |
+| Cycle input mode | `Shift+Tab` |
+| Stop the active team | `/team stop` |
 
 <br />
 

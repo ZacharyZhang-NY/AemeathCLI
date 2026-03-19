@@ -4,7 +4,7 @@
  */
 
 import { execaCommand } from "execa";
-import type { IToolRegistration, PermissionMode } from "../types/tool.js";
+import type { IToolExecutionContext, IToolRegistration } from "../types/tool.js";
 import type { IToolResult } from "../types/message.js";
 import { ExecutionTimeoutError } from "../types/errors.js";
 import { isCommandBlocked, isPathAllowed, redactSecrets } from "../utils/sanitizer.js";
@@ -83,22 +83,6 @@ function truncateOutput(output: string): string {
   return output.substring(0, MAX_OUTPUT_LENGTH) + "\n...(truncated)";
 }
 
-let workingDirectory = process.cwd();
-let blockedCommands: readonly string[] = [];
-let allowedPaths: readonly string[] = [workingDirectory];
-
-export function setBashWorkingDirectory(dir: string): void {
-  workingDirectory = dir;
-}
-
-export function setBashBlockedCommands(commands: readonly string[]): void {
-  blockedCommands = commands;
-}
-
-export function setBashAllowedPaths(paths: readonly string[]): void {
-  allowedPaths = paths;
-}
-
 export function createBashTool(): IToolRegistration {
   return {
     definition: {
@@ -128,8 +112,9 @@ export function createBashTool(): IToolRegistration {
       ],
     },
     category: "shell",
-    requiresApproval: (mode: PermissionMode, args: Record<string, unknown>): boolean => {
+    requiresApproval: (context: IToolExecutionContext, args: Record<string, unknown>): boolean => {
       const command = typeof args["command"] === "string" ? args["command"] : "";
+      const blockedCommands = context.blockedCommands;
 
       // Dangerous commands always require approval
       if (isDangerousCommand(command) || isCommandBlocked(command, blockedCommands)) {
@@ -137,13 +122,16 @@ export function createBashTool(): IToolRegistration {
       }
 
       // Strict mode: all shell commands require approval
-      if (mode === "strict") {
+      if (context.permissionMode === "strict") {
         return true;
       }
 
       return false;
     },
-    execute: async (args: Record<string, unknown>): Promise<IToolResult> => {
+    execute: async (
+      args: Record<string, unknown>,
+      context: IToolExecutionContext,
+    ): Promise<IToolResult> => {
       const command = args["command"];
       if (typeof command !== "string" || command.length === 0) {
         return {
@@ -153,6 +141,11 @@ export function createBashTool(): IToolRegistration {
           isError: true,
         };
       }
+
+      const workingDirectory = context.workingDirectory;
+      const blockedCommands = context.blockedCommands;
+      const allowedPaths = context.allowedPaths;
+      const projectRoot = context.projectRoot;
 
       // Block extremely dangerous patterns
       const lowerCommand = command.toLowerCase().trim();
@@ -176,7 +169,7 @@ export function createBashTool(): IToolRegistration {
         };
       }
 
-      if (!isPathAllowed(workingDirectory, allowedPaths, workingDirectory)) {
+      if (!isPathAllowed(workingDirectory, allowedPaths, projectRoot)) {
         return {
           toolCallId: "",
           name: "bash",

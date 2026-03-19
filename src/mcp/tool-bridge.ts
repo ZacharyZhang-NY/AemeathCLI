@@ -9,7 +9,7 @@ import { logger } from "../utils/logger.js";
 import { ToolCallError } from "../types/errors.js";
 import type { IToolDefinition, IToolParameter, IToolCall, IToolResult } from "../types/message.js";
 import type { IToolRegistration, IToolRegistry, ToolCategory } from "../types/tool.js";
-import type { PermissionMode } from "../types/tool.js";
+import type { IToolExecutionContext } from "../types/tool.js";
 import type { MCPServerManager } from "./server-manager.js";
 import type { IMCPToolSchema } from "./client.js";
 
@@ -303,9 +303,9 @@ export class MCPToolBridge {
     return {
       definition,
       category: MCP_CATEGORY,
-      requiresApproval: (mode: PermissionMode, _args: Record<string, unknown>) => {
+      requiresApproval: (context: IToolExecutionContext, _args: Record<string, unknown>) => {
         // MCP tools always require approval in strict mode
-        return mode === "strict";
+        return context.permissionMode === "strict";
       },
       execute: async (args: Record<string, unknown>) => {
         const call: IToolCall = {

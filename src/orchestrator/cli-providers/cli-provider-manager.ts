@@ -60,6 +60,10 @@ export class CliProviderManager {
         return new KimiCliProvider(tid, sm);
       case "ollama":
         return new OllamaCliProvider(tid, sm, model);
+      default: {
+        const _exhaustive: never = type;
+        throw new Error(`Unknown CLI provider type: ${String(_exhaustive)}`);
+      }
     }
   }
 }

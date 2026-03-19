@@ -103,6 +103,9 @@ export class TmuxManager {
     this.assertSession();
 
     const computed = this.layoutEngine.computeLayout(layoutConfig);
+    const resolvedLayout = layoutConfig.layout === "auto"
+      ? this.layoutEngine.resolveAutoLayout(layoutConfig.panes.length)
+      : layoutConfig.layout;
 
     // First pane is already the initial pane in the session
     const firstGeometry = computed.panes[0];
@@ -144,8 +147,7 @@ export class TmuxManager {
       });
     }
 
-    // Equalize layout after all splits
-    await this.equalizeLayout();
+    await this.applyLayoutPreset(resolvedLayout);
 
     logger.info(
       { paneCount: this.panes.size, session: this.sessionName },
@@ -334,16 +336,17 @@ export class TmuxManager {
     return firstLine ?? "%0";
   }
 
-  private async equalizeLayout(): Promise<void> {
+  private async applyLayoutPreset(layout: Exclude<ILayoutConfig["layout"], "auto">): Promise<void> {
     if (!this.sessionName) return;
+    const tmuxLayout = layout === "hub-spoke" ? "main-vertical" : "tiled";
     try {
       await execa(TMUX_BINARY, [
         "select-layout",
         "-t", this.sessionName,
-        "tiled",
+        tmuxLayout,
       ]);
     } catch {
-      logger.debug("Failed to equalize layout (non-fatal)");
+      logger.debug({ layout: tmuxLayout }, "Failed to apply tmux layout preset (non-fatal)");
     }
   }
 

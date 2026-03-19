@@ -6,7 +6,7 @@
 import fg from "fast-glob";
 import { stat } from "node:fs/promises";
 import { resolve } from "node:path";
-import type { IToolRegistration, PermissionMode } from "../types/tool.js";
+import type { IToolExecutionContext, IToolRegistration } from "../types/tool.js";
 import type { IToolResult } from "../types/message.js";
 import { logger } from "../utils/logger.js";
 import { isPathAllowed, validatePath } from "../utils/sanitizer.js";
@@ -16,17 +16,6 @@ const MAX_RESULTS = 1000;
 interface FileEntry {
   readonly path: string;
   readonly mtimeMs: number;
-}
-
-let projectRoot = process.cwd();
-let allowedPaths: readonly string[] = [projectRoot];
-
-export function setGlobProjectRoot(root: string): void {
-  projectRoot = root;
-}
-
-export function setGlobAllowedPaths(paths: readonly string[]): void {
-  allowedPaths = paths;
 }
 
 export function createGlobTool(): IToolRegistration {
@@ -51,10 +40,13 @@ export function createGlobTool(): IToolRegistration {
       ],
     },
     category: "search",
-    requiresApproval: (_mode: PermissionMode, _args: Record<string, unknown>): boolean => {
+    requiresApproval: (_context: IToolExecutionContext, _args: Record<string, unknown>): boolean => {
       return false; // Glob never requires approval
     },
-    execute: async (args: Record<string, unknown>): Promise<IToolResult> => {
+    execute: async (
+      args: Record<string, unknown>,
+      context: IToolExecutionContext,
+    ): Promise<IToolResult> => {
       const pattern = args["pattern"];
       if (typeof pattern !== "string" || pattern.length === 0) {
         return {
@@ -64,6 +56,9 @@ export function createGlobTool(): IToolRegistration {
           isError: true,
         };
       }
+
+      const projectRoot = context.projectRoot;
+      const allowedPaths = context.allowedPaths;
 
       let searchPath: string;
       if (typeof args["path"] === "string" && args["path"].length > 0) {

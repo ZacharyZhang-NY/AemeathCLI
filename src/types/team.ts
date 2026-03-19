@@ -85,7 +85,7 @@ export interface IIPCResponse {
 
 // ── Pane Layout (PRD section 9.2) ────────────────────────────────────────
 
-export type PaneLayout = "auto" | "horizontal" | "vertical" | "grid";
+export type PaneLayout = "auto" | "horizontal" | "vertical" | "grid" | "hub-spoke";
 
 export interface IPaneConfig {
   readonly paneId: string;

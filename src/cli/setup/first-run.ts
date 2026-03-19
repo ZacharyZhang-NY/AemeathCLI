@@ -2,12 +2,13 @@ import { existsSync } from "node:fs";
 
 import pc from "picocolors";
 
+import type { CliProviderType } from "../../orchestrator/constants.js";
+import { CLI_PROVIDER_ORDER, getCliProviderEntry, type LoginProvider } from "../../orchestrator/utils/provider-catalog.js";
+import { detectInstalledProviders } from "../../orchestrator/utils/detect-providers.js";
 import { ConfigStore } from "../../storage/config-store.js";
 import { DEFAULT_CONFIG, type IGlobalConfig } from "../../types/config.js";
 import { getConfigPath } from "../../utils/pathResolver.js";
 import { PACKAGE_VERSION } from "../../version.js";
-
-type FirstRunProvider = "claude" | "codex" | "gemini" | "kimi";
 
 interface IFirstRunLogin {
   login(): Promise<unknown>;
@@ -23,13 +24,6 @@ export interface FirstRunSetupResult {
   readonly created: boolean;
   readonly config: IGlobalConfig;
 }
-
-const FIRST_RUN_PROVIDERS: readonly FirstRunProvider[] = [
-  "claude",
-  "codex",
-  "gemini",
-  "kimi",
-] as const;
 
 export function hasGlobalConfig(): boolean {
   return existsSync(getConfigPath());
@@ -68,7 +62,7 @@ export function ensureDefaultConfig(): FirstRunSetupResult {
   };
 }
 
-async function createFirstRunLogin(provider: FirstRunProvider): Promise<IFirstRunLogin> {
+async function createFirstRunLogin(provider: LoginProvider): Promise<IFirstRunLogin> {
   switch (provider) {
     case "claude": {
       const { ClaudeLogin } = await import("../../auth/providers/claude-login.js");
@@ -119,9 +113,20 @@ export async function runFirstRunSetup(
 
   const store = new ConfigStore();
   const config = createInitialConfig();
+  const detectedProviders = detectInstalledProviders();
 
   if (options.defaults || !isInteractiveTerminal()) {
-    store.saveGlobal(config);
+    const defaultPrimaryMasterProvider = detectedProviders[0];
+    const configWithDefaults: IGlobalConfig = {
+      ...config,
+      swarm: {
+        onboardingComplete: true,
+        detectedProviders,
+        primaryMasterProvider: defaultPrimaryMasterProvider,
+        fallbackMasterProviders: detectedProviders.slice(1),
+      },
+    };
+    store.saveGlobal(configWithDefaults);
 
     const modeLabel = options.defaults ? "defaults" : "non-interactive defaults";
     process.stdout.write(
@@ -131,24 +136,43 @@ export async function runFirstRunSetup(
     return {
       configPath,
       created: true,
-      config,
+      config: configWithDefaults,
     };
   }
 
-  const { confirm } = await import("@inquirer/prompts");
+  const { checkbox, confirm, select } = await import("@inquirer/prompts");
 
   writeWelcomeBanner();
 
-  for (const provider of FIRST_RUN_PROVIDERS) {
-    const shouldLogin = await confirm({
-      message: `Log in to ${provider}?`,
-      default: provider !== "kimi",
-    });
+  const detectedLines = CLI_PROVIDER_ORDER.map((provider) => {
+    const entry = getCliProviderEntry(provider);
+    const installed = detectedProviders.includes(provider);
+    return `  ${installed ? pc.green("✓") : pc.dim("○")} ${entry.label} — ${installed ? "installed" : "not detected"}`;
+  });
+  process.stdout.write(`${detectedLines.join("\n")}\n\n`);
 
-    if (!shouldLogin) {
-      continue;
-    }
+  const loginChoices = CLI_PROVIDER_ORDER
+    .map((provider) => {
+      const entry = getCliProviderEntry(provider);
+      if (entry.loginProvider === undefined) {
+        return undefined;
+      }
 
+      const installed = detectedProviders.includes(provider);
+      return {
+        name: `${entry.label}${installed ? "" : " (not detected, login only)"}`,
+        value: entry.loginProvider,
+        checked: installed && provider !== "kimi-cli",
+      };
+    })
+    .filter((choice): choice is { name: string; value: LoginProvider; checked: boolean } => choice !== undefined);
+
+  const selectedLoginProviders = await checkbox<LoginProvider>({
+    message: "Which providers should be authenticated during setup?",
+    choices: loginChoices,
+  });
+
+  for (const provider of selectedLoginProviders) {
     process.stdout.write(pc.cyan(`  Logging in to ${provider}...\n`));
     try {
       const login = await createFirstRunLogin(provider);
@@ -160,15 +184,81 @@ export async function runFirstRunSetup(
     }
   }
 
-  store.saveGlobal(config);
+  if (detectedProviders.includes("ollama")) {
+    process.stdout.write(pc.green("  ✓ ollama — Local agent runtime detected\n"));
+  }
+
+  let primaryMasterProvider: CliProviderType | undefined;
+  let fallbackMasterProviders: CliProviderType[] = [];
+
+  if (detectedProviders.length > 0) {
+    primaryMasterProvider = await select<CliProviderType>({
+      message: "Choose the primary master agent provider for swarm orchestration:",
+      choices: detectedProviders.map((provider) => ({
+        name: `${getCliProviderEntry(provider).label} — ${getCliProviderEntry(provider).description}`,
+        value: provider,
+      })),
+    });
+
+    const remainingProviders = detectedProviders.filter(
+      (provider) => provider !== primaryMasterProvider,
+    );
+
+    if (remainingProviders.length > 0) {
+      fallbackMasterProviders = await checkbox<CliProviderType>({
+        message: "Select optional fallback master-agent providers:",
+        choices: remainingProviders.map((provider) => ({
+          name: `${getCliProviderEntry(provider).label} — ${getCliProviderEntry(provider).description}`,
+          value: provider,
+        })),
+      });
+    }
+  } else {
+    process.stdout.write(
+      `${pc.yellow("  !")} No supported native agent CLIs were detected. You can still use direct chat, but swarm orchestration will stay limited until one is installed.\n`,
+    );
+  }
+
+  const keepRoleDefaults = await confirm({
+    message: "Keep the recommended role-routing defaults?",
+    default: true,
+  });
+
+  const configuredProviders: IGlobalConfig["providers"] = {
+    ...config.providers,
+  };
+  for (const provider of detectedProviders) {
+    const entry = getCliProviderEntry(provider);
+    configuredProviders[entry.provider] = {
+      ...configuredProviders[entry.provider],
+      enabled: true,
+    };
+  }
+
+  const finalConfig: IGlobalConfig = {
+    ...config,
+    roles: keepRoleDefaults ? DEFAULT_CONFIG.roles : config.roles,
+    providers: configuredProviders,
+    swarm: {
+      onboardingComplete: true,
+      detectedProviders,
+      primaryMasterProvider,
+      fallbackMasterProviders,
+    },
+  };
+
+  store.saveGlobal(finalConfig);
 
   process.stdout.write(
     [
       "",
       `  ${pc.green("✓")} Configuration saved to ${pc.cyan(configPath)}`,
       "",
-      "  Ready. Start with `aemeathcli` for chat.",
-      "  For `aemeathcli launch`, make sure the supervisor provider also has an API key configured via `auth set-key` or environment variables.",
+      `  Swarm primary: ${primaryMasterProvider ? getCliProviderEntry(primaryMasterProvider).label : "not set"}`,
+      `  Swarm fallbacks: ${fallbackMasterProviders.length > 0 ? fallbackMasterProviders.map(getCliProviderEntry).map((entry) => entry.label).join(", ") : "none"}`,
+      "",
+      "  Ready. Start with `aemeathcli` or `ac`.",
+      "  Use Shift+Tab inside the TUI to switch between swarm, guided edits, and direct chat.",
       "",
     ].join("\n"),
   );
@@ -176,6 +266,6 @@ export async function runFirstRunSetup(
   return {
     configPath,
     created: true,
-    config,
+    config: finalConfig,
   };
 }

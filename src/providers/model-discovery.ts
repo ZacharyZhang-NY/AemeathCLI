@@ -4,7 +4,7 @@
  */
 
 import { readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { homedir } from "node:os";
 import { existsSync } from "node:fs";
 import { execa } from "execa";
@@ -107,7 +107,7 @@ async function discoverCodexModels(): Promise<void> {
 
 async function discoverGeminiModels(): Promise<void> {
   // 1. Read the Gemini CLI's models.js source for VALID_GEMINI_MODELS
-  const geminiModelsPath = findGeminiModelsFile();
+  const geminiModelsPath = await findGeminiModelsFile();
   if (geminiModelsPath) {
     try {
       const source = await readFile(geminiModelsPath, "utf-8");
@@ -152,28 +152,19 @@ async function discoverGeminiModels(): Promise<void> {
 }
 
 /** Find the Gemini CLI's models.js file in node_modules. */
-function findGeminiModelsFile(): string | undefined {
-  const candidates = [
-    // Global npm install
-    join(
-      homedir(),
-      ".nvm/versions/node",
-    ),
-  ];
-
+async function findGeminiModelsFile(): Promise<string | undefined> {
   // Try to find via which gemini → resolve symlink → find models.js
   try {
-    const geminiPath = join(
-      homedir(),
-      ".nvm",
-    );
-    // Walk common paths
-    const { execSync } = require("node:child_process") as typeof import("node:child_process");
-    const whichResult = execSync("which gemini 2>/dev/null", { encoding: "utf-8" }).trim();
+    const { stdout } = await execa("which", ["gemini"], {
+      stdin: "ignore",
+      timeout: 5_000,
+      env: { ...process.env, NO_COLOR: "1" },
+    });
+    const whichResult = stdout.trim();
     if (whichResult) {
       // gemini binary is at e.g. /Users/x/.nvm/versions/node/v22.18.0/bin/gemini
       // models.js is at .../lib/node_modules/@google/gemini-cli/node_modules/@google/gemini-cli-core/dist/src/config/models.js
-      const binDir = join(whichResult, "..");
+      const binDir = dirname(whichResult);
       const modelsPath = join(
         binDir,
         "..",
@@ -196,7 +187,6 @@ function findGeminiModelsFile(): string | undefined {
   } catch {
     // which not available or gemini not installed
   }
-  void candidates;
 
   return undefined;
 }

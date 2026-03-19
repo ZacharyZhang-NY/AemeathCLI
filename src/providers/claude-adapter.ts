@@ -3,7 +3,7 @@
  * Supports Claude Opus 4.6, Sonnet 4.6, Haiku 4.5
  */
 
-import { generateText, streamText, type CoreMessage } from "ai";
+import { generateText, streamText } from "ai";
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { logger } from "../utils/logger.js";
 import {
@@ -18,10 +18,14 @@ import type {
   IChatResponse,
   IChatMessage,
   IStreamChunk,
-  IToolCall,
-  IToolDefinition,
-  ITokenUsage,
 } from "../types/message.js";
+import {
+  buildAiSdkTools,
+  buildModelMessages,
+  buildTokenUsage,
+  extractAiSdkToolCalls,
+  mapAiSdkFinishReason,
+} from "./ai-sdk-shared.js";
 import type { IModelProvider, IProviderOptions } from "./types.js";
 
 const PROVIDER_NAME: ProviderName = "anthropic";
@@ -36,7 +40,7 @@ const CLAUDE_MODELS: readonly string[] = [
 
 const CHARS_PER_TOKEN_ESTIMATE = 4;
 
-function mapRole(role: string): "user" | "assistant" | "system" | "tool" {
+function mapRole(role: IChatMessage["role"]): "user" | "assistant" | "system" | "tool" {
   switch (role) {
     case "user":
       return "user";
@@ -49,101 +53,6 @@ function mapRole(role: string): "user" | "assistant" | "system" | "tool" {
     default:
       return "user";
   }
-}
-
-function convertTools(
-  tools: readonly IToolDefinition[] | undefined,
-): Record<string, { description: string; parameters: Record<string, unknown> }> | undefined {
-  if (tools === undefined || tools.length === 0) {
-    return undefined;
-  }
-
-  const result: Record<string, { description: string; parameters: Record<string, unknown> }> = {};
-
-  for (const tool of tools) {
-    const properties: Record<string, unknown> = {};
-    const required: string[] = [];
-
-    for (const param of tool.parameters) {
-      const prop: Record<string, unknown> = {
-        type: param.type,
-        description: param.description,
-      };
-      if (param.enum !== undefined) {
-        prop["enum"] = param.enum;
-      }
-      if (param.default !== undefined) {
-        prop["default"] = param.default;
-      }
-      properties[param.name] = prop;
-      if (param.required) {
-        required.push(param.name);
-      }
-    }
-
-    result[tool.name] = {
-      description: tool.description,
-      parameters: {
-        type: "object",
-        properties,
-        required,
-      },
-    };
-  }
-
-  return result;
-}
-
-function buildMessages(
-  messages: readonly IChatMessage[],
-): CoreMessage[] {
-  return messages.map((msg) => {
-    // Assistant message with tool calls → multi-part content
-    if (msg.role === "assistant" && msg.toolCalls !== undefined && msg.toolCalls.length > 0) {
-      const parts: unknown[] = [];
-      if (msg.content.length > 0) {
-        parts.push({ type: "text", text: msg.content });
-      }
-      for (const tc of msg.toolCalls) {
-        parts.push({
-          type: "tool-call",
-          toolCallId: tc.id,
-          toolName: tc.name,
-          args: tc.arguments,
-        });
-      }
-      return { role: "assistant" as const, content: parts };
-    }
-
-    // Tool result message — toolCalls[0] carries the call metadata
-    if (msg.role === "tool" && msg.toolCalls !== undefined && msg.toolCalls.length > 0) {
-      const firstCall = msg.toolCalls[0];
-      if (firstCall !== undefined) {
-        return {
-          role: "tool" as const,
-          content: [{
-            type: "tool-result" as const,
-            toolCallId: firstCall.id,
-            toolName: firstCall.name,
-            result: msg.content,
-          }],
-        };
-      }
-    }
-
-    // Standard text message
-    return {
-      role: mapRole(msg.role),
-      content: msg.content,
-    };
-  }) as CoreMessage[];
-}
-
-function computeCost(modelInfo: IModelInfo, inputTokens: number, outputTokens: number): number {
-  return (
-    (inputTokens / 1_000_000) * modelInfo.inputPricePerMToken +
-    (outputTokens / 1_000_000) * modelInfo.outputPricePerMToken
-  );
 }
 
 function classifyError(error: unknown, model: string): never {
@@ -182,29 +91,21 @@ export class ClaudeAdapter implements IModelProvider {
 
   async chat(request: IChatRequest): Promise<IChatResponse> {
     const modelInfo = this.getModelInfo(request.model);
-    const messages = buildMessages(request.messages);
-    const tools = convertTools(request.tools);
+    const messages = buildModelMessages(request.messages, { mapRole });
+    const tools = buildAiSdkTools(request.tools);
 
     try {
       const result = await generateText({
         model: this.anthropic(request.model),
         messages,
         ...(request.system !== undefined ? { system: request.system } : {}),
-        tools: tools as Record<string, never>,
-        maxTokens: request.maxTokens ?? modelInfo.maxOutputTokens,
+        ...(tools !== undefined ? { tools } : {}),
+        maxOutputTokens: request.maxTokens ?? modelInfo.maxOutputTokens,
         ...(request.temperature !== undefined ? { temperature: request.temperature } : {}),
       });
 
-      const toolCalls = extractToolCalls(result);
-      const inputTokens = result.usage.promptTokens;
-      const outputTokens = result.usage.completionTokens;
-
-      const usage: ITokenUsage = {
-        inputTokens,
-        outputTokens,
-        totalTokens: inputTokens + outputTokens,
-        costUsd: computeCost(modelInfo, inputTokens, outputTokens),
-      };
+      const toolCalls = extractAiSdkToolCalls(result.toolCalls);
+      const usage = buildTokenUsage(modelInfo, result.usage);
 
       const responseMessage: IChatMessage = {
         id: result.response.id,
@@ -223,7 +124,10 @@ export class ClaudeAdapter implements IModelProvider {
         provider: PROVIDER_NAME,
         message: responseMessage,
         usage,
-        finishReason: mapFinishReason(result.finishReason),
+        finishReason: mapAiSdkFinishReason(result.finishReason, {
+          stop: ["end-turn"],
+          maxTokens: ["max-tokens"],
+        }),
       };
     } catch (error: unknown) {
       classifyError(error, request.model);
@@ -232,38 +136,34 @@ export class ClaudeAdapter implements IModelProvider {
 
   async *stream(request: IChatRequest): AsyncIterable<IStreamChunk> {
     const modelInfo = this.getModelInfo(request.model);
-    const messages = buildMessages(request.messages);
-    const tools = convertTools(request.tools);
+    const messages = buildModelMessages(request.messages, { mapRole });
+    const tools = buildAiSdkTools(request.tools);
 
     try {
       const result = streamText({
         model: this.anthropic(request.model),
         messages,
         ...(request.system !== undefined ? { system: request.system } : {}),
-        tools: tools as Record<string, never>,
-        maxTokens: request.maxTokens ?? modelInfo.maxOutputTokens,
+        ...(tools !== undefined ? { tools } : {}),
+        maxOutputTokens: request.maxTokens ?? modelInfo.maxOutputTokens,
         ...(request.temperature !== undefined ? { temperature: request.temperature } : {}),
       });
 
       for await (const part of result.fullStream) {
         if (part.type === "text-delta") {
-          yield { type: "text", content: part.textDelta };
+          yield { type: "text", content: part.text };
         } else if (part.type === "tool-call") {
-          const toolCall: IToolCall = {
-            id: part.toolCallId,
-            name: part.toolName,
-            arguments: part.args as Record<string, unknown>,
-          };
+          const [toolCall] = extractAiSdkToolCalls([{
+            toolCallId: part.toolCallId,
+            toolName: part.toolName,
+            input: part.input,
+          }]);
+          if (toolCall === undefined) {
+            continue;
+          }
           yield { type: "tool_call", toolCall };
         } else if (part.type === "finish") {
-          const inputTokens = part.usage.promptTokens;
-          const outputTokens = part.usage.completionTokens;
-          const usage: ITokenUsage = {
-            inputTokens,
-            outputTokens,
-            totalTokens: inputTokens + outputTokens,
-            costUsd: computeCost(modelInfo, inputTokens, outputTokens),
-          };
+          const usage = buildTokenUsage(modelInfo, part.totalUsage);
           yield { type: "usage", usage };
         } else if (part.type === "error") {
           const errMsg = part.error instanceof Error ? part.error.message : String(part.error);
@@ -290,35 +190,5 @@ export class ClaudeAdapter implements IModelProvider {
       throw new ModelNotFoundError(model);
     }
     return info;
-  }
-}
-
-function extractToolCalls(
-  result: { toolCalls?: ReadonlyArray<{ toolCallId: string; toolName: string; args: unknown }> },
-): IToolCall[] {
-  if (result.toolCalls === undefined || result.toolCalls.length === 0) {
-    return [];
-  }
-  return result.toolCalls.map((tc) => ({
-    id: tc.toolCallId,
-    name: tc.toolName,
-    arguments: tc.args as Record<string, unknown>,
-  }));
-}
-
-function mapFinishReason(
-  reason: string | undefined,
-): "stop" | "tool_calls" | "max_tokens" | "error" {
-  switch (reason) {
-    case "stop":
-    case "end-turn":
-      return "stop";
-    case "tool-calls":
-      return "tool_calls";
-    case "length":
-    case "max-tokens":
-      return "max_tokens";
-    default:
-      return "stop";
   }
 }

@@ -67,6 +67,7 @@ export type {
   IPermissionConfig,
   PaneBackend,
   ISplitPanelConfig,
+  ISwarmConfig,
   ICostConfig,
   ITelemetryConfig,
   IOAuthProviderConfig,

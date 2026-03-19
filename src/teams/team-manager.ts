@@ -49,6 +49,7 @@ export interface ITeamCreateOptions {
   readonly agents: readonly IAgentDefinition[];
   readonly sessionId?: string;
   readonly cliEntryPoint?: string;
+  readonly agentEnv?: Readonly<Record<string, string>>;
 }
 
 // ── Internal Types ────────────────────────────────────────────────────
@@ -140,6 +141,7 @@ export class TeamManager {
         teamName: name,
         sessionId,
         cliEntryPoint: options.cliEntryPoint,
+        ...(options.agentEnv !== undefined ? { env: options.agentEnv } : {}),
       };
 
       const agentProcess = new AgentProcess(member, processOptions);

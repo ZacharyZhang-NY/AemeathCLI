@@ -38,6 +38,49 @@ export type AgentMessageCallback = (
 
 const DEFAULT_SHUTDOWN_TIMEOUT_MS = 10_000;
 const DEFAULT_REGISTRATION_TIMEOUT_MS = 15_000;
+const BASE_ENV_KEYS: readonly string[] = [
+  "PATH",
+  "HOME",
+  "SHELL",
+  "TERM",
+  "TMPDIR",
+  "TMP",
+  "TEMP",
+  "LANG",
+  "LC_ALL",
+  "LC_CTYPE",
+  "USER",
+  "LOGNAME",
+  "PWD",
+  "XDG_CONFIG_HOME",
+  "XDG_CACHE_HOME",
+  "XDG_DATA_HOME",
+  "APPDATA",
+  "LOCALAPPDATA",
+  "PROGRAMDATA",
+  "SYSTEMROOT",
+  "COMSPEC",
+  "PATHEXT",
+  "COLORTERM",
+  "CI",
+  "NO_COLOR",
+  "FORCE_COLOR",
+  "HTTP_PROXY",
+  "HTTPS_PROXY",
+  "NO_PROXY",
+  "SSH_AUTH_SOCK",
+] as const;
+const FORWARDED_ENV_PREFIXES: readonly string[] = [
+  "AEMEATHCLI_",
+  "ANTHROPIC_",
+  "OPENAI_",
+  "GOOGLE_",
+  "GEMINI_",
+  "MOONSHOT_",
+  "KIMI_",
+  "OLLAMA_",
+  "NODE_",
+] as const;
 
 // ── AgentProcess ──────────────────────────────────────────────────────
 
@@ -92,21 +135,7 @@ export class AgentProcess {
 
     const socketPath = getIPCSocketPath(this.sessionId);
 
-    const env: Record<string, string | undefined> = {
-      ...process.env,
-      ...this.customEnv,
-      AEMEATHCLI_AGENT_MODE: "1",
-      AEMEATHCLI_TEAM_NAME: this.teamName,
-      AEMEATHCLI_AGENT_ID: this.config.agentId,
-      AEMEATHCLI_AGENT_NAME: this.config.name,
-      AEMEATHCLI_IPC_SOCKET: socketPath,
-      // Prefer SDK adapters when API keys are available (not OAuth/native login).
-      // Native login credentials always use native CLI adapters regardless of
-      // this flag — the registry enforces this to avoid "invalid API key" errors.
-      AEMEATHCLI_PREFER_SDK: "1",
-      // Increase timeout for native CLI fallback (agent tasks can be long).
-      AEMEATHCLI_NATIVE_CLI_TIMEOUT_MS: "300000",
-    };
+    const env = this.buildChildEnv(socketPath);
 
     try {
       this.child = fork(this.cliEntryPoint, args, {
@@ -142,6 +171,33 @@ export class AgentProcess {
       const reason = error instanceof Error ? error.message : String(error);
       throw new AgentSpawnError(this.config.name, reason);
     }
+  }
+
+  private buildChildEnv(socketPath: string): Record<string, string> {
+    const env: Record<string, string | undefined> = {
+      ...pickInheritedEnv(process.env),
+      ...this.customEnv,
+      AEMEATHCLI_AGENT_MODE: "1",
+      AEMEATHCLI_TEAM_NAME: this.teamName,
+      AEMEATHCLI_AGENT_ID: this.config.agentId,
+      AEMEATHCLI_AGENT_NAME: this.config.name,
+      AEMEATHCLI_IPC_SOCKET: socketPath,
+      // Prefer SDK adapters when API keys are available (not OAuth/native login).
+      // Native login credentials always use native CLI adapters regardless of
+      // this flag — the registry enforces this to avoid "invalid API key" errors.
+      AEMEATHCLI_PREFER_SDK: "1",
+      // Increase timeout for native CLI fallback (agent tasks can be long).
+      AEMEATHCLI_NATIVE_CLI_TIMEOUT_MS: "300000",
+    };
+
+    const sanitized: Record<string, string> = {};
+    for (const [key, value] of Object.entries(env)) {
+      if (typeof value === "string" && value.length > 0) {
+        sanitized[key] = value;
+      }
+    }
+
+    return sanitized;
   }
 
   /** Gracefully stop the agent. Falls back to SIGTERM after timeout. */
@@ -393,6 +449,28 @@ export class AgentProcess {
     this.currentTaskId = undefined;
     this.messageCallbacks.clear();
   }
+}
+
+function pickInheritedEnv(env: NodeJS.ProcessEnv): Record<string, string> {
+  const filtered: Record<string, string> = {};
+
+  for (const key of BASE_ENV_KEYS) {
+    const value = env[key];
+    if (typeof value === "string" && value.length > 0) {
+      filtered[key] = value;
+    }
+  }
+
+  for (const [key, value] of Object.entries(env)) {
+    if (typeof value !== "string" || value.length === 0) {
+      continue;
+    }
+    if (FORWARDED_ENV_PREFIXES.some((prefix) => key.startsWith(prefix))) {
+      filtered[key] = value;
+    }
+  }
+
+  return filtered;
 }
 
 // ── Type Guard ─────────────────────────────────────────────────────────

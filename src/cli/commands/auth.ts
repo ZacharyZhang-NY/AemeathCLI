@@ -5,9 +5,14 @@
 import { Command } from "commander";
 import pc from "picocolors";
 import type { ProviderName } from "../../types/index.js";
+import {
+  LOGIN_PROVIDERS,
+  type LoginProvider,
+  getAuthStatusRecord,
+  formatDetailedAuthStatusLine,
+} from "../../auth/auth-status.js";
 
-const VALID_PROVIDERS = ["claude", "codex", "gemini", "kimi"] as const;
-type LoginProvider = (typeof VALID_PROVIDERS)[number];
+const VALID_PROVIDERS = LOGIN_PROVIDERS;
 
 function isValidProvider(value: string): value is LoginProvider {
   return (VALID_PROVIDERS as readonly string[]).includes(value);
@@ -73,50 +78,6 @@ async function runLoginFlow(provider: LoginProvider): Promise<void> {
   const loginModule = await loadLoginModule(provider);
   await loginModule.login();
   process.stdout.write(pc.green(`Successfully logged in to ${provider}\n`));
-}
-
-interface IAuthStatusRecord {
-  readonly provider: LoginProvider;
-  readonly loggedIn: boolean;
-  readonly authMethod?: string | undefined;
-  readonly email?: string | undefined;
-  readonly plan?: string | undefined;
-  readonly launchReady: boolean;
-  readonly launchMethod?: string | undefined;
-}
-
-async function getAuthStatusRecord(provider: LoginProvider): Promise<IAuthStatusRecord> {
-  const providerName = PROVIDER_MODEL_SWITCH[provider].provider;
-  const { SessionManager } = await import("../../auth/session-manager.js");
-  const { ApiKeyFallback } = await import("../../auth/api-key-fallback.js");
-
-  const sessionManager = new SessionManager();
-  const fallback = new ApiKeyFallback();
-  const activeCredential = await sessionManager.getActiveCredential(providerName).catch(() => undefined);
-  const storedApiKey = await fallback.getCredential(providerName);
-  const envCredential = fallback.getFromEnvironment(providerName);
-  const launchCredential = storedApiKey ?? envCredential;
-
-  let email: string | undefined;
-  let plan: string | undefined;
-  if (activeCredential?.method === "native_login") {
-    const loginModule = await loadLoginModule(provider);
-    const status = await loginModule
-      .getStatus()
-      .catch(() => ({ loggedIn: true, email: undefined, plan: undefined }));
-    email = status.email;
-    plan = status.plan;
-  }
-
-  return {
-    provider,
-    loggedIn: activeCredential !== undefined,
-    authMethod: activeCredential?.method,
-    email,
-    plan,
-    launchReady: launchCredential !== undefined,
-    launchMethod: launchCredential?.method,
-  };
 }
 
 const PROVIDER_MODEL_SWITCH: Readonly<Record<LoginProvider, { provider: ProviderName; model: string }>> = {
@@ -223,23 +184,8 @@ export function createAuthCommand(): Command {
       }
 
       for (const record of records) {
-        if (!record.loggedIn) {
-          process.stdout.write(pc.red(`  ✗ ${record.provider}`) + " — Not logged in\n");
-          continue;
-        }
-
-        const identity =
-          record.email !== undefined
-            ? ` as ${record.email}${record.plan !== undefined ? ` (${record.plan})` : ""}`
-            : "";
-        const launchStatus = record.launchReady
-          ? `launch-ready via ${record.launchMethod ?? "api key"}`
-          : "launch needs API key or env var";
-
-        process.stdout.write(
-          pc.green(`  ✓ ${record.provider}`) +
-            ` — ${record.authMethod ?? "configured"}${identity}; ${launchStatus}\n`,
-        );
+        const line = formatDetailedAuthStatusLine(record);
+        process.stdout.write(`${record.loggedIn ? pc.green(line) : pc.red(line)}\n`);
       }
     });
 

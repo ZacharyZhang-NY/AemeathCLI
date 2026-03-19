@@ -3,7 +3,7 @@
  * Per PRD section 5.1
  */
 
-import type { IToolRegistration, PermissionMode } from "../types/tool.js";
+import type { IToolExecutionContext, IToolRegistration } from "../types/tool.js";
 import type { IToolResult } from "../types/message.js";
 import { logger } from "../utils/logger.js";
 
@@ -46,7 +46,7 @@ export function createWebSearchTool(): IToolRegistration {
       ],
     },
     category: "web",
-    requiresApproval: (_mode: PermissionMode, _args: Record<string, unknown>): boolean => {
+    requiresApproval: (_context: IToolExecutionContext, _args: Record<string, unknown>): boolean => {
       return false;
     },
     execute: async (args: Record<string, unknown>): Promise<IToolResult> => {

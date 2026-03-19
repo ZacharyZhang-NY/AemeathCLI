@@ -4,10 +4,11 @@
  * and optional tool-activity description.
  */
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useMemo } from "react";
 import { Box, Text } from "ink";
 import { GradientSpinner } from "./GradientSpinner.js";
 import { colors } from "../theme.js";
+import { useAnimationTick } from "../hooks/use-animation-tick.js";
 
 interface IThinkingIndicatorProps {
   /** Current tool activity (e.g. "Reading src/foo.ts") */
@@ -38,22 +39,9 @@ export function ThinkingIndicator({
   modelName,
   startTime,
 }: IThinkingIndicatorProps): React.ReactElement {
-  const [elapsed, setElapsed] = useState(0);
-  const [phraseIndex, setPhraseIndex] = useState(0);
-
-  useEffect(() => {
-    const origin = startTime ?? Date.now();
-    const timer = setInterval(() => {
-      const ms = Date.now() - origin;
-      setElapsed(ms);
-      setPhraseIndex(
-        Math.floor(ms / PHRASE_CYCLE_MS) % THINKING_PHRASES.length,
-      );
-    }, 100);
-    return () => {
-      clearInterval(timer);
-    };
-  }, [startTime]);
+  const tick = useAnimationTick(1000);
+  const elapsed = startTime === undefined ? 0 : Math.max(0, Date.now() - startTime);
+  const phraseIndex = Math.floor(elapsed / PHRASE_CYCLE_MS) % THINKING_PHRASES.length;
 
   const elapsedStr = useMemo(() => {
     const secs = Math.floor(elapsed / 1000);
@@ -63,7 +51,7 @@ export function ThinkingIndicator({
     return `${mins}m${secs % 60}s`;
   }, [elapsed]);
 
-  const dotCount = Math.floor((elapsed / 400) % 4);
+  const dotCount = tick % 4;
   const dots = ".".repeat(dotCount);
   const phrase = THINKING_PHRASES[phraseIndex] ?? "Thinking";
 

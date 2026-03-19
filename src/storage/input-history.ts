@@ -33,9 +33,9 @@ export async function loadInputHistory(projectRoot: string): Promise<string[]> {
 
   try {
     const raw = await readFile(getHistoryPath(projectRoot), "utf-8");
-    const parsed = JSON.parse(raw) as unknown;
+    const parsed: unknown = JSON.parse(raw);
     if (Array.isArray(parsed) && parsed.every((x) => typeof x === "string")) {
-      const history = parsed as string[];
+      const history = [...parsed];
       projectCaches.set(projectRoot, history);
       return history;
     }

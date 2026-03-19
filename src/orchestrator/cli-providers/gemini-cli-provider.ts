@@ -16,7 +16,7 @@ export class GeminiCliProvider extends BaseCliProvider {
   readonly extractionRetries = 2;
 
   getStartCommand(): string {
-    return "gemini --yolo";
+    return "gemini";
   }
 
   getExitCommand(): string {

@@ -3,7 +3,7 @@
  * Supports Gemini 2.5 Pro, Gemini 2.5 Flash
  */
 
-import { generateText, streamText, type CoreMessage } from "ai";
+import { generateText, streamText } from "ai";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { logger } from "../utils/logger.js";
 import {
@@ -18,10 +18,14 @@ import type {
   IChatResponse,
   IChatMessage,
   IStreamChunk,
-  IToolCall,
-  IToolDefinition,
-  ITokenUsage,
 } from "../types/message.js";
+import {
+  buildAiSdkTools,
+  buildModelMessages,
+  buildTokenUsage,
+  extractAiSdkToolCalls,
+  mapAiSdkFinishReason,
+} from "./ai-sdk-shared.js";
 import type { IModelProvider, IProviderOptions } from "./types.js";
 
 const PROVIDER_NAME: ProviderName = "google";
@@ -35,89 +39,6 @@ const GEMINI_MODELS: readonly string[] = [
 ] as const;
 
 const CHARS_PER_TOKEN_ESTIMATE = 4;
-
-function convertTools(
-  tools: readonly IToolDefinition[] | undefined,
-): Record<string, { description: string; parameters: Record<string, unknown> }> | undefined {
-  if (tools === undefined || tools.length === 0) {
-    return undefined;
-  }
-  const result: Record<string, { description: string; parameters: Record<string, unknown> }> = {};
-  for (const tool of tools) {
-    const properties: Record<string, unknown> = {};
-    const required: string[] = [];
-    for (const param of tool.parameters) {
-      const prop: Record<string, unknown> = {
-        type: param.type,
-        description: param.description,
-      };
-      if (param.enum !== undefined) {
-        prop["enum"] = param.enum;
-      }
-      if (param.default !== undefined) {
-        prop["default"] = param.default;
-      }
-      properties[param.name] = prop;
-      if (param.required) {
-        required.push(param.name);
-      }
-    }
-    result[tool.name] = {
-      description: tool.description,
-      parameters: { type: "object", properties, required },
-    };
-  }
-  return result;
-}
-
-function buildMessages(
-  messages: readonly IChatMessage[],
-): CoreMessage[] {
-  return messages.map((msg) => {
-    if (msg.role === "assistant" && msg.toolCalls !== undefined && msg.toolCalls.length > 0) {
-      const parts: Array<Record<string, unknown>> = [];
-      if (msg.content.length > 0) {
-        parts.push({ type: "text", text: msg.content });
-      }
-      for (const toolCall of msg.toolCalls) {
-        parts.push({
-          type: "tool-call",
-          toolCallId: toolCall.id,
-          toolName: toolCall.name,
-          args: toolCall.arguments,
-        });
-      }
-      return { role: "assistant" as const, content: parts };
-    }
-
-    if (msg.role === "tool") {
-      const toolCall = msg.toolCalls?.[0];
-      if (toolCall !== undefined) {
-        return {
-          role: "tool" as const,
-          content: [{
-            type: "tool-result" as const,
-            toolCallId: toolCall.id,
-            toolName: toolCall.name,
-            result: msg.content,
-          }],
-        };
-      }
-    }
-
-    return {
-      role: msg.role as "user" | "assistant" | "system" | "tool",
-      content: msg.content,
-    };
-  }) as CoreMessage[];
-}
-
-function computeCost(modelInfo: IModelInfo, inputTokens: number, outputTokens: number): number {
-  return (
-    (inputTokens / 1_000_000) * modelInfo.inputPricePerMToken +
-    (outputTokens / 1_000_000) * modelInfo.outputPricePerMToken
-  );
-}
 
 function classifyError(error: unknown, model: string): never {
   const message = error instanceof Error ? error.message : String(error);
@@ -152,26 +73,19 @@ export class GeminiAdapter implements IModelProvider {
 
   async chat(request: IChatRequest): Promise<IChatResponse> {
     const modelInfo = this.getModelInfo(request.model);
-    const messages = buildMessages(request.messages);
-    const tools = convertTools(request.tools);
+    const messages = buildModelMessages(request.messages);
+    const tools = buildAiSdkTools(request.tools);
     try {
       const result = await generateText({
         model: this.google(request.model),
         messages,
         ...(request.system !== undefined ? { system: request.system } : {}),
-        tools: tools as Record<string, never>,
-        maxTokens: request.maxTokens ?? modelInfo.maxOutputTokens,
+        ...(tools !== undefined ? { tools } : {}),
+        maxOutputTokens: request.maxTokens ?? modelInfo.maxOutputTokens,
         ...(request.temperature !== undefined ? { temperature: request.temperature } : {}),
       });
-      const toolCalls = extractToolCalls(result);
-      const inputTokens = result.usage.promptTokens;
-      const outputTokens = result.usage.completionTokens;
-      const usage: ITokenUsage = {
-        inputTokens,
-        outputTokens,
-        totalTokens: inputTokens + outputTokens,
-        costUsd: computeCost(modelInfo, inputTokens, outputTokens),
-      };
+      const toolCalls = extractAiSdkToolCalls(result.toolCalls);
+      const usage = buildTokenUsage(modelInfo, result.usage);
       const responseMessage: IChatMessage = {
         id: result.response.id,
         role: "assistant",
@@ -188,7 +102,7 @@ export class GeminiAdapter implements IModelProvider {
         provider: PROVIDER_NAME,
         message: responseMessage,
         usage,
-        finishReason: mapFinishReason(result.finishReason),
+        finishReason: mapAiSdkFinishReason(result.finishReason),
       };
     } catch (error: unknown) {
       classifyError(error, request.model);
@@ -197,38 +111,34 @@ export class GeminiAdapter implements IModelProvider {
 
   async *stream(request: IChatRequest): AsyncIterable<IStreamChunk> {
     const modelInfo = this.getModelInfo(request.model);
-    const messages = buildMessages(request.messages);
-    const tools = convertTools(request.tools);
+    const messages = buildModelMessages(request.messages);
+    const tools = buildAiSdkTools(request.tools);
     try {
       const result = streamText({
         model: this.google(request.model),
         messages,
         ...(request.system !== undefined ? { system: request.system } : {}),
-        tools: tools as Record<string, never>,
-        maxTokens: request.maxTokens ?? modelInfo.maxOutputTokens,
+        ...(tools !== undefined ? { tools } : {}),
+        maxOutputTokens: request.maxTokens ?? modelInfo.maxOutputTokens,
         ...(request.temperature !== undefined ? { temperature: request.temperature } : {}),
       });
       for await (const part of result.fullStream) {
         if (part.type === "text-delta") {
-          yield { type: "text", content: part.textDelta };
+          yield { type: "text", content: part.text };
         } else if (part.type === "tool-call") {
-          const toolCall: IToolCall = {
-            id: part.toolCallId,
-            name: part.toolName,
-            arguments: part.args as Record<string, unknown>,
-          };
+          const [toolCall] = extractAiSdkToolCalls([{
+            toolCallId: part.toolCallId,
+            toolName: part.toolName,
+            input: part.input,
+          }]);
+          if (toolCall === undefined) {
+            continue;
+          }
           yield { type: "tool_call", toolCall };
         } else if (part.type === "finish") {
-          const inTok = part.usage.promptTokens;
-          const outTok = part.usage.completionTokens;
           yield {
             type: "usage",
-            usage: {
-              inputTokens: inTok,
-              outputTokens: outTok,
-              totalTokens: inTok + outTok,
-              costUsd: computeCost(modelInfo, inTok, outTok),
-            },
+            usage: buildTokenUsage(modelInfo, part.totalUsage),
           };
         } else if (part.type === "error") {
           const errMsg = part.error instanceof Error ? part.error.message : String(part.error);
@@ -254,33 +164,5 @@ export class GeminiAdapter implements IModelProvider {
       throw new ModelNotFoundError(model);
     }
     return info;
-  }
-}
-
-function extractToolCalls(
-  result: { toolCalls?: ReadonlyArray<{ toolCallId: string; toolName: string; args: unknown }> },
-): IToolCall[] {
-  if (result.toolCalls === undefined || result.toolCalls.length === 0) {
-    return [];
-  }
-  return result.toolCalls.map((tc) => ({
-    id: tc.toolCallId,
-    name: tc.toolName,
-    arguments: tc.args as Record<string, unknown>,
-  }));
-}
-
-function mapFinishReason(
-  reason: string | undefined,
-): "stop" | "tool_calls" | "max_tokens" | "error" {
-  switch (reason) {
-    case "stop":
-      return "stop";
-    case "tool-calls":
-      return "tool_calls";
-    case "length":
-      return "max_tokens";
-    default:
-      return "stop";
   }
 }

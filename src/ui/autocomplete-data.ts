@@ -28,12 +28,11 @@ export const SLASH_COMMANDS: readonly ISlashCommand[] = [
   { command: "/mcp list", description: "List connected MCP servers" },
   { command: "/mcp add", description: "Add an MCP server" },
   { command: "/skill list", description: "List available skills" },
-  { command: "/panel", description: "Change split-panel layout" },
+  { command: "/panel", description: "Show swarm layout information" },
   { command: "/login status", description: "Show login status for all providers" },
   { command: "/login logout", description: "Log out of a provider" },
   { command: "/config get", description: "Get a configuration value" },
   { command: "/config set", description: "Set a configuration value" },
-  { command: "/launch", description: "Start the agent orchestrator" },
   { command: "/history", description: "List past conversations" },
   { command: "/resume", description: "Resume a past conversation by number or ID" },
   { command: "/quit", description: "Exit" },
@@ -42,18 +41,14 @@ export const SLASH_COMMANDS: readonly ISlashCommand[] = [
 
 // ── Context References (@) ──────────────────────────────────────────────────
 
-export const CONTEXT_REFS: readonly IAutocompleteItem[] = [
-  { label: "@file", description: "Reference a file in the project" },
+const BUILTIN_CONTEXT_REFS: readonly IAutocompleteItem[] = [
   { label: "@codebase", description: "Reference the entire codebase" },
-  { label: "@anthropic", description: "Anthropic/Claude provider context" },
-  { label: "@openai", description: "OpenAI/Codex provider context" },
-  { label: "@google", description: "Google/Gemini provider context" },
-  { label: "@kimi", description: "Kimi/Moonshot provider context" },
-  { label: "@web", description: "Web search context" },
-  { label: "@git", description: "Git repository context" },
-  { label: "@docs", description: "Project documentation context" },
-  { label: "@errors", description: "Recent error context" },
+  { label: "@git", description: "Reference git state" },
+  { label: "@docs", description: "Reference project docs" },
+  { label: "@web", description: "Reference web context" },
 ];
+
+let dynamicFileRefs: readonly IAutocompleteItem[] = [];
 
 // ── Code References (`) ─────────────────────────────────────────────────────
 
@@ -101,6 +96,10 @@ export function getSkillRefs(): readonly IAutocompleteItem[] {
   return dynamicSkillRefs;
 }
 
+export function registerDynamicFileRefs(files: readonly IAutocompleteItem[]): void {
+  dynamicFileRefs = files;
+}
+
 // ── Trigger Detection ───────────────────────────────────────────────────────
 
 export type AutocompleteTrigger = "/" | "@" | "`" | "$";
@@ -114,7 +113,9 @@ export function getAutocompleteItems(trigger: AutocompleteTrigger, query: string
       return filtered.map((cmd) => ({ label: cmd.command, description: cmd.description }));
     }
     case "@": {
-      return CONTEXT_REFS.filter((ref) => ref.label.toLowerCase().includes(normalizedQuery));
+      const fileMatches = dynamicFileRefs.filter((ref) => ref.label.toLowerCase().includes(normalizedQuery));
+      const builtinMatches = BUILTIN_CONTEXT_REFS.filter((ref) => ref.label.toLowerCase().includes(normalizedQuery));
+      return [...fileMatches, ...builtinMatches];
     }
     case "`": {
       return CODE_REFS.filter((ref) => ref.label.toLowerCase().includes(normalizedQuery));

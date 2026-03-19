@@ -10,14 +10,7 @@
 
 import { spawnSync } from "node:child_process";
 import type { CliProviderType } from "../constants.js";
-
-const PROVIDER_COMMANDS: Record<CliProviderType, readonly string[]> = {
-  "claude-code": ["claude", "--version"],
-  "codex": ["codex", "--version"],
-  "gemini-cli": ["gemini", "--version"],
-  "kimi-cli": ["kimi", "--version"],
-  "ollama": ["ollama", "--version"],
-};
+import { CLI_PROVIDER_ORDER, getCliProviderEntry } from "./provider-catalog.js";
 
 /**
  * Detect which CLI AI providers are installed on the system.
@@ -30,16 +23,17 @@ const PROVIDER_COMMANDS: Record<CliProviderType, readonly string[]> = {
 export function detectInstalledProviders(): CliProviderType[] {
   const available: CliProviderType[] = [];
 
-  for (const [provider, [cmd, ...args]] of Object.entries(PROVIDER_COMMANDS)) {
+  for (const provider of CLI_PROVIDER_ORDER) {
     try {
-      if (cmd === undefined) continue;
-      const result = spawnSync(cmd, args, {
+      const entry = getCliProviderEntry(provider);
+      const args = ["--version"];
+      const result = spawnSync(entry.binary, args, {
         stdio: "ignore",
         timeout: 5000,
         shell: process.platform === "win32",
       });
       if (result.status === 0) {
-        available.push(provider as CliProviderType);
+        available.push(provider);
       }
     } catch {
       // Not installed — skip

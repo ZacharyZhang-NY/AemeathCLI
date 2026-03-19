@@ -5,22 +5,11 @@
 
 import { readFile, writeFile } from "node:fs/promises";
 import { stat } from "node:fs/promises";
-import type { IToolRegistration, PermissionMode } from "../types/tool.js";
+import type { IToolExecutionContext, IToolRegistration } from "../types/tool.js";
 import type { IToolResult } from "../types/message.js";
 import { FileNotFoundError } from "../types/errors.js";
 import { isPathAllowed, validatePath } from "../utils/sanitizer.js";
 import { logger } from "../utils/logger.js";
-
-let projectRoot = process.cwd();
-let allowedPaths: readonly string[] = [projectRoot];
-
-export function setEditProjectRoot(root: string): void {
-  projectRoot = root;
-}
-
-export function setEditAllowedPaths(paths: readonly string[]): void {
-  allowedPaths = paths;
-}
 
 export function createEditTool(): IToolRegistration {
   return {
@@ -57,10 +46,13 @@ export function createEditTool(): IToolRegistration {
       ],
     },
     category: "file",
-    requiresApproval: (mode: PermissionMode, _args: Record<string, unknown>): boolean => {
-      return mode === "strict" || mode === "standard";
+    requiresApproval: (context: IToolExecutionContext, _args: Record<string, unknown>): boolean => {
+      return context.permissionMode === "strict" || context.permissionMode === "standard";
     },
-    execute: async (args: Record<string, unknown>): Promise<IToolResult> => {
+    execute: async (
+      args: Record<string, unknown>,
+      context: IToolExecutionContext,
+    ): Promise<IToolResult> => {
       const filePath = args["file_path"];
       const oldString = args["old_string"];
       const newString = args["new_string"];
@@ -101,6 +93,9 @@ export function createEditTool(): IToolRegistration {
           isError: true,
         };
       }
+
+      const projectRoot = context.projectRoot;
+      const allowedPaths = context.allowedPaths;
 
       let resolvedPath: string;
       try {

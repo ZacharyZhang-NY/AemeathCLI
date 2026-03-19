@@ -4,7 +4,7 @@
  */
 
 import { execaCommand } from "execa";
-import type { IToolRegistration, PermissionMode } from "../types/tool.js";
+import type { IToolExecutionContext, IToolRegistration } from "../types/tool.js";
 import type { IToolResult } from "../types/message.js";
 import { logger } from "../utils/logger.js";
 
@@ -56,12 +56,6 @@ function truncateOutput(output: string): string {
   return output.substring(0, MAX_OUTPUT_LENGTH) + "\n...(truncated)";
 }
 
-let workingDirectory = process.cwd();
-
-export function setGitWorkingDirectory(dir: string): void {
-  workingDirectory = dir;
-}
-
 export function createGitTool(): IToolRegistration {
   return {
     definition: {
@@ -78,7 +72,7 @@ export function createGitTool(): IToolRegistration {
       ],
     },
     category: "git",
-    requiresApproval: (mode: PermissionMode, args: Record<string, unknown>): boolean => {
+    requiresApproval: (context: IToolExecutionContext, args: Record<string, unknown>): boolean => {
       const command = typeof args["command"] === "string" ? args["command"] : "";
       const subcommand = parseGitSubcommand(command);
 
@@ -93,18 +87,21 @@ export function createGitTool(): IToolRegistration {
       }
 
       // Write commands need approval in strict mode
-      if (mode === "strict") {
+      if (context.permissionMode === "strict") {
         return true;
       }
 
       // Push needs approval in standard mode
-      if (subcommand === "push" && mode === "standard") {
+      if (subcommand === "push" && context.permissionMode === "standard") {
         return true;
       }
 
       return false;
     },
-    execute: async (args: Record<string, unknown>): Promise<IToolResult> => {
+    execute: async (
+      args: Record<string, unknown>,
+      context: IToolExecutionContext,
+    ): Promise<IToolResult> => {
       const command = args["command"];
       if (typeof command !== "string" || command.length === 0) {
         return {
@@ -114,6 +111,8 @@ export function createGitTool(): IToolRegistration {
           isError: true,
         };
       }
+
+      const workingDirectory = context.workingDirectory;
 
       const trimmedCommand = command.trim();
       if (!trimmedCommand.startsWith("git ")) {

@@ -5,7 +5,7 @@
 
 import { readFile, stat } from "node:fs/promises";
 import { extname } from "node:path";
-import type { IToolRegistration, PermissionMode } from "../types/tool.js";
+import type { IToolExecutionContext, IToolRegistration } from "../types/tool.js";
 import type { IToolResult } from "../types/message.js";
 import { FileNotFoundError } from "../types/errors.js";
 import { isPathAllowed, validatePath } from "../utils/sanitizer.js";
@@ -64,17 +64,6 @@ function formatWithLineNumbers(
     .join("\n");
 }
 
-let projectRoot = process.cwd();
-let allowedPaths: readonly string[] = [projectRoot];
-
-export function setReadProjectRoot(root: string): void {
-  projectRoot = root;
-}
-
-export function setReadAllowedPaths(paths: readonly string[]): void {
-  allowedPaths = paths;
-}
-
 export function createReadTool(): IToolRegistration {
   return {
     definition: {
@@ -105,10 +94,13 @@ export function createReadTool(): IToolRegistration {
       ],
     },
     category: "file",
-    requiresApproval: (_mode: PermissionMode, _args: Record<string, unknown>): boolean => {
+    requiresApproval: (_context: IToolExecutionContext, _args: Record<string, unknown>): boolean => {
       return false; // Read never requires approval
     },
-    execute: async (args: Record<string, unknown>): Promise<IToolResult> => {
+    execute: async (
+      args: Record<string, unknown>,
+      context: IToolExecutionContext,
+    ): Promise<IToolResult> => {
       const filePath = args["file_path"];
       if (typeof filePath !== "string" || filePath.length === 0) {
         return {
@@ -118,6 +110,9 @@ export function createReadTool(): IToolRegistration {
           isError: true,
         };
       }
+
+      const projectRoot = context.projectRoot;
+      const allowedPaths = context.allowedPaths;
 
       let resolvedPath: string;
       try {

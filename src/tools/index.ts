@@ -5,50 +5,29 @@
 
 export { ToolRegistry } from "./registry.js";
 
-export { createReadTool, setReadProjectRoot, setReadAllowedPaths } from "./read.js";
-export { createWriteTool, setWriteProjectRoot, setWriteAllowedPaths } from "./write.js";
-export { createEditTool, setEditProjectRoot, setEditAllowedPaths } from "./edit.js";
-export { createGlobTool, setGlobProjectRoot, setGlobAllowedPaths } from "./glob.js";
-export { createGrepTool, setGrepProjectRoot, setGrepAllowedPaths } from "./grep.js";
-export { createBashTool, setBashWorkingDirectory, setBashBlockedCommands, setBashAllowedPaths } from "./bash.js";
+export { createReadTool } from "./read.js";
+export { createWriteTool } from "./write.js";
+export { createEditTool } from "./edit.js";
+export { createGlobTool } from "./glob.js";
+export { createGrepTool } from "./grep.js";
+export { createBashTool } from "./bash.js";
 export { createWebSearchTool, setWebSearchProvider } from "./web-search.js";
 export { createWebFetchTool } from "./web-fetch.js";
-export { createGitTool, setGitWorkingDirectory } from "./git.js";
+export { createGitTool } from "./git.js";
 
 import { ToolRegistry } from "./registry.js";
-import { createReadTool, setReadProjectRoot, setReadAllowedPaths } from "./read.js";
-import { createWriteTool, setWriteProjectRoot, setWriteAllowedPaths } from "./write.js";
-import { createEditTool, setEditProjectRoot, setEditAllowedPaths } from "./edit.js";
-import { createGlobTool, setGlobProjectRoot, setGlobAllowedPaths } from "./glob.js";
-import { createGrepTool, setGrepProjectRoot, setGrepAllowedPaths } from "./grep.js";
-import {
-  createBashTool,
-  setBashWorkingDirectory,
-  setBashBlockedCommands,
-  setBashAllowedPaths,
-} from "./bash.js";
+import { createReadTool } from "./read.js";
+import { createWriteTool } from "./write.js";
+import { createEditTool } from "./edit.js";
+import { createGlobTool } from "./glob.js";
+import { createGrepTool } from "./grep.js";
+import { createBashTool } from "./bash.js";
 import { createWebSearchTool } from "./web-search.js";
 import { createWebFetchTool } from "./web-fetch.js";
-import { createGitTool, setGitWorkingDirectory } from "./git.js";
+import { createGitTool } from "./git.js";
 import type { IToolExecutionContext } from "../types/tool.js";
 
-export function createDefaultRegistry(context: IToolExecutionContext): ToolRegistry {
-  // Configure module-level settings from context
-  setReadProjectRoot(context.projectRoot);
-  setReadAllowedPaths(context.allowedPaths);
-  setWriteProjectRoot(context.projectRoot);
-  setWriteAllowedPaths(context.allowedPaths);
-  setEditProjectRoot(context.projectRoot);
-  setEditAllowedPaths(context.allowedPaths);
-  setGlobProjectRoot(context.projectRoot);
-  setGlobAllowedPaths(context.allowedPaths);
-  setGrepProjectRoot(context.projectRoot);
-  setGrepAllowedPaths(context.allowedPaths);
-  setBashWorkingDirectory(context.workingDirectory);
-  setBashBlockedCommands(context.blockedCommands);
-  setBashAllowedPaths(context.allowedPaths);
-  setGitWorkingDirectory(context.workingDirectory);
-
+export function createDefaultRegistry(_context: IToolExecutionContext): ToolRegistry {
   const registry = new ToolRegistry();
 
   registry.register(createReadTool());
