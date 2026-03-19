@@ -603,11 +603,3 @@ npm run test:coverage  # With coverage report
 ## License
 
 MIT
-
-<br />
-
----
-
-<p align="center">
-  Built with Claude, GPT, and Gemini — orchestrated by AemeathCLI itself.
-</p>
