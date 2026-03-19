@@ -17,6 +17,7 @@ export interface IChatMessage {
   readonly model?: string | undefined;
   readonly provider?: ProviderName | undefined;
   readonly toolCalls?: readonly IToolCall[] | undefined;
+  readonly toolCallId?: string | undefined;  // Links tool results to their originating tool calls
   readonly tokenUsage?: ITokenUsage | undefined;
   readonly createdAt: Date;
 }
@@ -75,7 +76,7 @@ export interface IToolParameter {
   readonly type: string;
   readonly description: string;
   readonly required: boolean;
-  readonly default?: unknown | undefined;
+  readonly default?: unknown;
   readonly enum?: readonly string[] | undefined;
 }
 

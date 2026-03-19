@@ -1,10 +1,11 @@
 /**
- * Autocomplete popup overlay for InputBar
- * Displays filtered suggestions with arrow-key navigation and scrolling
+ * Autocomplete popup overlay with themed colors,
+ * scroll indicators, and visual selection highlight.
  */
 
 import React from "react";
 import { Box, Text } from "ink";
+import { colors } from "../theme.js";
 import type { IAutocompleteItem } from "../autocomplete-data.js";
 
 const MAX_VISIBLE_ITEMS = 8;
@@ -14,12 +15,12 @@ interface IAutocompletePopupProps {
   readonly selectedIndex: number;
 }
 
-export function AutocompletePopup({ items, selectedIndex }: IAutocompletePopupProps): React.ReactElement | null {
-  if (items.length === 0) {
-    return null;
-  }
+export function AutocompletePopup({
+  items,
+  selectedIndex,
+}: IAutocompletePopupProps): React.ReactElement | null {
+  if (items.length === 0) return null;
 
-  // Calculate scrolling window that follows the selected item
   const totalItems = items.length;
   const windowSize = Math.min(MAX_VISIBLE_ITEMS, totalItems);
 
@@ -27,8 +28,10 @@ export function AutocompletePopup({ items, selectedIndex }: IAutocompletePopupPr
   if (selectedIndex >= windowSize) {
     scrollOffset = selectedIndex - windowSize + 1;
   }
-  // Clamp scroll offset to valid range
-  scrollOffset = Math.max(0, Math.min(scrollOffset, totalItems - windowSize));
+  scrollOffset = Math.max(
+    0,
+    Math.min(scrollOffset, totalItems - windowSize),
+  );
 
   const visibleItems = items.slice(scrollOffset, scrollOffset + windowSize);
   const hasMore = scrollOffset + windowSize < totalItems;
@@ -38,34 +41,41 @@ export function AutocompletePopup({ items, selectedIndex }: IAutocompletePopupPr
     <Box
       flexDirection="column"
       borderStyle="round"
-      borderColor="cyan"
+      borderColor={colors.status.active}
       paddingX={1}
       marginBottom={0}
     >
+      {/* Scroll-up indicator */}
       {hasLess ? (
-        <Text color="gray" dimColor>
-          {"  "}... {scrollOffset} above
+        <Text color={colors.text.muted} dimColor>
+          {"  "}\u25B2 {scrollOffset} above
         </Text>
       ) : null}
+
       {visibleItems.map((item, visibleIndex) => {
         const actualIndex = scrollOffset + visibleIndex;
         const isSelected = actualIndex === selectedIndex;
         return (
           <Box key={`${item.label}-${actualIndex}`}>
-            <Text color={isSelected ? "cyan" : "white"} bold={isSelected}>
-              {isSelected ? "> " : "  "}
+            <Text
+              color={isSelected ? colors.status.active : colors.text.primary}
+              bold={isSelected}
+            >
+              {isSelected ? "\u25B8 " : "  "}
               {item.label}
             </Text>
-            <Text color="gray" dimColor>
+            <Text color={colors.text.muted} dimColor>
               {"  "}
               {item.description}
             </Text>
           </Box>
         );
       })}
+
+      {/* Scroll-down indicator */}
       {hasMore ? (
-        <Text color="gray" dimColor>
-          {"  "}... {totalItems - scrollOffset - windowSize} more
+        <Text color={colors.text.muted} dimColor>
+          {"  "}\u25BE {totalItems - scrollOffset - windowSize} more
         </Text>
       ) : null}
     </Box>

@@ -8,13 +8,18 @@ import { stat } from "node:fs/promises";
 import type { IToolRegistration, PermissionMode } from "../types/tool.js";
 import type { IToolResult } from "../types/message.js";
 import { FileNotFoundError } from "../types/errors.js";
-import { validatePath } from "../utils/sanitizer.js";
+import { isPathAllowed, validatePath } from "../utils/sanitizer.js";
 import { logger } from "../utils/logger.js";
 
 let projectRoot = process.cwd();
+let allowedPaths: readonly string[] = [projectRoot];
 
 export function setEditProjectRoot(root: string): void {
   projectRoot = root;
+}
+
+export function setEditAllowedPaths(paths: readonly string[]): void {
+  allowedPaths = paths;
 }
 
 export function createEditTool(): IToolRegistration {
@@ -103,6 +108,15 @@ export function createEditTool(): IToolRegistration {
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : "Path validation failed";
         return { toolCallId: "", name: "edit", content: msg, isError: true };
+      }
+
+      if (!isPathAllowed(resolvedPath, allowedPaths, projectRoot)) {
+        return {
+          toolCallId: "",
+          name: "edit",
+          content: `Access denied: ${resolvedPath} is outside the configured allowed paths.`,
+          isError: true,
+        };
       }
 
       try {

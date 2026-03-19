@@ -102,7 +102,7 @@ export class CodexLogin {
     logger.info("Spawning codex login (browser will open automatically)");
     try {
       await this.spawnInteractive(CLI_COMMAND, ["login"]);
-    } catch (error: unknown) {
+    } catch {
       // Try device auth as fallback for headless environments
       try {
         await this.spawnInteractive(CLI_COMMAND, ["login", "--device-auth"]);

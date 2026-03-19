@@ -17,6 +17,7 @@ import type { IModelInfo } from "../types/model.js";
 export interface IModelProvider {
   readonly name: string;
   readonly supportedModels: readonly string[];
+  readonly supportsToolCalling: boolean;
 
   /** Send a non-streaming chat request. */
   chat(request: IChatRequest): Promise<IChatResponse>;
@@ -40,4 +41,8 @@ export interface IModelProvider {
 export interface IProviderOptions {
   readonly apiKey?: string;
   readonly baseUrl?: string;
+}
+
+export interface IProviderRegistryOptions {
+  readonly preferSdk?: boolean;
 }

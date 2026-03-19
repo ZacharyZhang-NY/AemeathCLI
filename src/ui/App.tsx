@@ -33,7 +33,7 @@ import {
 import type { ProviderRegistry } from "../providers/registry.js";
 import type { TeamManager } from "../teams/team-manager.js";
 import { v4Id } from "./utils.js";
-import { SLASH_COMMANDS } from "./autocomplete-data.js";
+import { SLASH_COMMANDS, registerDynamicSkills } from "./autocomplete-data.js";
 import { ModelSelector } from "./components/ModelSelector.js";
 import { ThinkingSelector } from "./components/ThinkingSelector.js";
 import { LoginSelector } from "./components/LoginSelector.js";
@@ -84,6 +84,24 @@ type SelectionMode =
   | { readonly type: "thinking"; readonly modelId: string }
   | { readonly type: "login" };
 
+const DEFAULT_SYSTEM_PROMPT =
+  "You are AemeathCLI (aemeathcli), a multi-model AI agent orchestrator. " +
+  "You help users with coding tasks, code review, debugging, refactoring, and project management. " +
+  "You are NOT Claude Code, Codex, or Gemini CLI — you are Aemeath Agent Swarm, an independent tool " +
+  "that orchestrates multiple AI providers (Anthropic, OpenAI, Google, Kimi, Ollama).\n\n" +
+  "Answer concisely and directly. Key features:\n" +
+  "- Multi-model: /model to switch between Claude, GPT, Gemini, Kimi, Ollama\n" +
+  "- Agent orchestration: `ac launch` starts the orchestrator with AI-driven worker delegation\n" +
+  "  - `ac launch --task \"...\"` for single-shot orchestration\n" +
+  "  - `ac launch --visual` for tmux split-panel view\n" +
+  "  - `ac launch --worker-provider codex` to use Codex workers\n" +
+  "  - The supervisor AI decides when to use handoff/assign tools — no manual setup needed\n" +
+  "- Skills: $review, $commit, $plan, $debug, $test, $refactor\n" +
+  "- Commands: /help, /model, /role, /history, /resume, /cost\n\n" +
+  "When users ask about agent swarm, multi-agent, team mode, or orchestration, " +
+  "tell them to use `ac launch` (or `aemeathcli launch`). " +
+  "This chat mode is for direct conversation — `ac launch` is the orchestrator.";
+
 function App({ config, options }: IAppProps): React.ReactElement {
   const { resolution, modelId, switchModel, switchRole } = useModel(
     config,
@@ -110,6 +128,20 @@ function App({ config, options }: IAppProps): React.ReactElement {
   const [thinkingValue, setThinkingValue] = useState<string>("medium");
   const [selectionMode, setSelectionMode] = useState<SelectionMode>({ type: "none" });
 
+  // Dynamic model display order — populated by model discovery on mount
+  const [modelDisplayOrder, setModelDisplayOrder] = useState<
+    Readonly<Record<string, readonly import("../types/model.js").IModelDisplayEntry[]>> | undefined
+  >(undefined);
+
+  // Persistent input history — loaded from disk on mount for cross-session arrow-up
+  const [persistentHistory, setPersistentHistory] = useState<string[]>([]);
+
+  // Interaction mode — default to agent-swarm (orchestrator), Shift+Tab cycles
+  const [inputMode, setInputMode] = useState<import("./components/InputBar.js").InputMode>("agent-swarm");
+
+  // Current conversation ID for history persistence
+  const conversationIdRef = useRef<string | undefined>(undefined);
+
   // Cached provider registry — initialized lazily on first use
   const registryRef = useRef<ProviderRegistry | undefined>(undefined);
 
@@ -118,6 +150,34 @@ function App({ config, options }: IAppProps): React.ReactElement {
     const { createDefaultRegistry } = await import("../providers/registry.js");
     registryRef.current = await createDefaultRegistry();
     return registryRef.current;
+  }, []);
+
+  // Resolve project root once on mount (used for per-project history/persistence)
+  const projectRootRef = useRef<string>(process.cwd());
+  useEffect(() => {
+    import("../utils/pathResolver.js")
+      .then(({ findProjectRoot }) => {
+        projectRootRef.current = findProjectRoot();
+      })
+      .catch(() => {});
+  }, []);
+
+  // Load per-project persistent input history on mount
+  useEffect(() => {
+    (async () => {
+      try {
+        const { findProjectRoot } = await import("../utils/pathResolver.js");
+        const root = findProjectRoot();
+        projectRootRef.current = root;
+        const { loadInputHistory } = await import("../storage/input-history.js");
+        const history = await loadInputHistory(root);
+        if (history.length > 0) {
+          setPersistentHistory(history);
+        }
+      } catch {
+        // Non-critical
+      }
+    })();
   }, []);
 
   // Detect git branch on mount using safe execFile
@@ -133,6 +193,39 @@ function App({ config, options }: IAppProps): React.ReactElement {
       .catch(() => {
         // Not in a git repo or git not available
       });
+  }, []);
+
+  // Discover skills from all directories on mount (populates $ autocomplete)
+  useEffect(() => {
+    (async () => {
+      try {
+        const { SkillRegistry } = await import("../skills/registry.js");
+        const { findProjectRoot } = await import("../utils/pathResolver.js");
+        const registry = new SkillRegistry();
+        await registry.initialize(findProjectRoot());
+        const all = registry.listAll();
+        if (all.length > 0) {
+          registerDynamicSkills(
+            all.map((s) => ({ label: `$${s.name}`, description: s.description })),
+          );
+        }
+      } catch {
+        // Skill discovery failed — keep built-in fallback
+      }
+    })();
+  }, []);
+
+  // Discover models from provider CLIs on mount (populates /model selector)
+  useEffect(() => {
+    (async () => {
+      try {
+        const { discoverModels, getDisplayOrder } = await import("../providers/model-discovery.js");
+        await discoverModels();
+        setModelDisplayOrder(getDisplayOrder());
+      } catch {
+        // Model discovery failed — keep hardcoded fallback
+      }
+    })();
   }, []);
 
   // Handle initial message
@@ -162,6 +255,7 @@ function App({ config, options }: IAppProps): React.ReactElement {
             appendOutput: panel.appendOutput,
           },
           getRegistry,
+          projectRoot: projectRootRef.current,
         });
         return;
       }
@@ -172,17 +266,24 @@ function App({ config, options }: IAppProps): React.ReactElement {
         return;
       }
 
-      // Detect prompt-based team creation intent from natural language.
-      // Skip when launched as an agent pane, when a split panel is active,
-      // or when a team is already running — prevents recursive team creation
-      // (the leader's auto-submitted task contains "team"/"agent" keywords).
-      if (!options.isAgentPane && !panel.isSplitPanelActive && !activeTeamName && detectTeamCreationIntent(input)) {
-        const leaderTask = await handlePromptBasedTeamCreation(input, setMessages, panel, getRegistry, modelId);
-        if (leaderTask) {
-          // Auto-submit the leader's coordination task so the left pane
-          // actively works (matching Claude Code's agent team model where
-          // the leader pane is never idle).
-          setTimeout(() => void handleSubmit(leaderTask), 1500);
+      // In agent-swarm mode, route through team creation (split panel)
+      // unless a team is already running or we're in a sub-pane
+      if (
+        inputMode === "agent-swarm" &&
+        !options.isAgentPane &&
+        !panel.isSplitPanelActive &&
+        !activeTeamName
+      ) {
+        setIsProcessing(true);
+        try {
+          const leaderTask = await handlePromptBasedTeamCreation(
+            input, setMessages, panel, getRegistry, modelId,
+          );
+          if (leaderTask) {
+            setTimeout(() => void handleSubmit(leaderTask), 1500);
+          }
+        } finally {
+          setIsProcessing(false);
         }
         return;
       }
@@ -193,6 +294,11 @@ function App({ config, options }: IAppProps): React.ReactElement {
         content: input,
         createdAt: new Date(),
       };
+
+      // Persist input to per-project cross-session history (non-blocking)
+      import("../storage/input-history.js")
+        .then(({ appendInputHistory }) => appendInputHistory(projectRootRef.current, input))
+        .catch(() => {});
 
       setMessages((prev) => [...prev, userMessage]);
       setIsProcessing(true);
@@ -227,7 +333,7 @@ function App({ config, options }: IAppProps): React.ReactElement {
           const stream = candidateProvider.stream({
             model: candidateModel,
             messages: allMessages,
-            system: options.systemPrompt,
+            system: options.systemPrompt ?? DEFAULT_SYSTEM_PROMPT,
             maxTokens: 16_000,
           });
 
@@ -310,6 +416,9 @@ function App({ config, options }: IAppProps): React.ReactElement {
             output.push(assistantMessage);
             return output;
           });
+
+          // Persist messages to per-project conversation DB (non-blocking)
+          persistMessages(projectRootRef.current, userMessage, assistantMessage, responseModel, responseProvider);
         }
       } catch (error: unknown) {
         const errorContent = error instanceof Error ? error.message : String(error);
@@ -430,6 +539,7 @@ function App({ config, options }: IAppProps): React.ReactElement {
         currentModelId={modelId}
         onSelect={handleModelSelected}
         onCancel={handleSelectionCancel}
+        modelOrder={modelDisplayOrder ?? PROVIDER_MODEL_ORDER}
       />
     );
   }
@@ -479,6 +589,9 @@ function App({ config, options }: IAppProps): React.ReactElement {
       gitBranch={gitBranch}
       streamingContent={streamState.content}
       activity={streamState.activity}
+      initialHistory={persistentHistory}
+      mode={inputMode}
+      onModeChange={setInputMode}
     />
   );
 }
@@ -503,6 +616,8 @@ interface ICommandContext {
   readonly resolution: { readonly provider: string; readonly role?: string | undefined };
   readonly panel: IPanelControls;
   readonly getRegistry: () => Promise<ProviderRegistry>;
+  /** Current project root — used for per-project history/resume. */
+  readonly projectRoot: string;
 }
 
 function addSystemMessage(ctx: ICommandContext, content: string): void {
@@ -668,6 +783,26 @@ async function handleInternalCommand(
       await handleConfigSlashCommand(args, ctx);
       break;
 
+    case "/launch":
+      addSystemMessage(
+        ctx,
+        `To start the agent orchestrator, exit this chat and run:\n\n` +
+        `  ac launch                              Interactive orchestrator REPL\n` +
+        `  ac launch --task "Fix the tests"       Single-shot task\n` +
+        `  ac launch --visual                     With tmux split-panel view\n` +
+        `  ac launch --worker-provider codex      Use Codex as worker\n\n` +
+        `The supervisor AI decides when to delegate to workers — no manual setup needed.`,
+      );
+      break;
+
+    case "/history":
+      await handleHistoryCommand(ctx);
+      break;
+
+    case "/resume":
+      await handleResumeCommand(arg, ctx);
+      break;
+
     case "/quit":
     case "/exit":
       process.exit(0);
@@ -675,6 +810,150 @@ async function handleInternalCommand(
 
     default:
       addSystemMessage(ctx, `Unknown command: ${command}. Type /help for available commands.`);
+  }
+}
+
+// ── History & Resume Commands ──────────────────────────────────────────────
+
+async function handleHistoryCommand(ctx: ICommandContext): Promise<void> {
+  try {
+    const { SqliteStore } = await import("../storage/sqlite-store.js");
+    const { ConversationStore } = await import("../storage/conversation-store.js");
+    const db = new SqliteStore();
+    await db.open();
+    const store = new ConversationStore(db);
+    // Filter by current project — conversations are project-scoped
+    const conversations = store.listConversations(ctx.projectRoot);
+    db.close();
+
+    if (conversations.length === 0) {
+      addSystemMessage(ctx, "No conversation history for this project.");
+      return;
+    }
+
+    const lines = conversations.slice(0, 20).map((c, i) => {
+      const date = new Date(c.createdAt).toLocaleDateString();
+      const model = c.defaultModel ?? "unknown";
+      return `  ${String(i + 1).padStart(2)}. ${date}  ${model.padEnd(20)}  ${c.id.slice(0, 8)}\u2026`;
+    });
+    addSystemMessage(
+      ctx,
+      `Conversations in this project (${conversations.length} total):\n${lines.join("\n")}\n\nUse /resume <number> or /resume <id> to load.`,
+    );
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : String(error);
+    addSystemMessage(ctx, `Failed to load history: ${msg}`);
+  }
+}
+
+async function handleResumeCommand(
+  arg: string | undefined,
+  ctx: ICommandContext,
+): Promise<void> {
+  if (!arg) {
+    addSystemMessage(ctx, "Usage: /resume <number> or /resume <conversation-id>\nUse /history to see past conversations.");
+    return;
+  }
+
+  try {
+    const { SqliteStore } = await import("../storage/sqlite-store.js");
+    const { ConversationStore } = await import("../storage/conversation-store.js");
+    const db = new SqliteStore();
+    await db.open();
+    const store = new ConversationStore(db);
+
+    let conversationId: string;
+
+    // Resolve by number or ID — scoped to current project
+    const num = parseInt(arg, 10);
+    if (!isNaN(num) && num > 0) {
+      const conversations = store.listConversations(ctx.projectRoot);
+      const target = conversations[num - 1];
+      if (!target) {
+        db.close();
+        addSystemMessage(ctx, `Conversation #${num} not found. Use /history to see available.`);
+        return;
+      }
+      conversationId = target.id;
+    } else {
+      // Try as ID prefix — scoped to current project
+      const conversations = store.listConversations(ctx.projectRoot);
+      const match = conversations.find((c) => c.id.startsWith(arg));
+      if (!match) {
+        db.close();
+        addSystemMessage(ctx, `No conversation matching "${arg}". Use /history to see available.`);
+        return;
+      }
+      conversationId = match.id;
+    }
+
+    const storedMessages = store.getMessages(conversationId);
+    db.close();
+
+    if (storedMessages.length === 0) {
+      addSystemMessage(ctx, "Conversation found but contains no messages.");
+      return;
+    }
+
+    // Convert stored messages to IChatMessage format
+    const restored: IChatMessage[] = storedMessages.map((m) => ({
+      id: v4Id(),
+      role: m.role as IChatMessage["role"],
+      content: m.content,
+      model: m.model ?? undefined,
+      provider: m.provider as IChatMessage["provider"],
+      createdAt: new Date(m.createdAt),
+    }));
+
+    ctx.setMessages(restored);
+    addSystemMessage(ctx, `Resumed conversation (${restored.length} messages loaded).`);
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : String(error);
+    addSystemMessage(ctx, `Failed to resume: ${msg}`);
+  }
+}
+
+// ── Conversation Persistence ──────────────────────────────────────────────
+
+/** Lazily-initialized conversation DB reference. */
+let convDbRef: { store: InstanceType<typeof import("../storage/conversation-store.js").ConversationStore>; convId: string } | undefined;
+
+async function persistMessages(
+  projectRoot: string,
+  userMsg: IChatMessage,
+  assistantMsg: IChatMessage,
+  model: string,
+  provider: string,
+): Promise<void> {
+  try {
+    const { SqliteStore } = await import("../storage/sqlite-store.js");
+    const { ConversationStore } = await import("../storage/conversation-store.js");
+
+    if (!convDbRef) {
+      const db = new SqliteStore();
+      await db.open();
+      const store = new ConversationStore(db);
+      const conv = store.createConversation(projectRoot, model);
+      convDbRef = { store, convId: conv.id };
+    }
+
+    const { store, convId } = convDbRef;
+
+    store.addMessage({
+      conversationId: convId,
+      role: "user",
+      content: userMsg.content,
+    });
+
+    store.addMessage({
+      conversationId: convId,
+      role: "assistant",
+      model,
+      provider: provider as import("../types/model.js").ProviderName,
+      content: assistantMsg.content,
+    });
+  } catch {
+    // Non-critical — don't break the chat
   }
 }
 
@@ -812,14 +1091,19 @@ function buildTeamDesignUserPrompt(
 const TEAM_CREATION_PATTERNS: readonly RegExp[] = [
   /\bcreate\s+(?:a\s+)?team\b/i,
   /\bstart\s+(?:a\s+)?team\b/i,
-  /\bspawn\s+(?:a\s+)?(?:team|agents?)\b/i,
-  /\buse\s+(?:a\s+)?team\b/i,
+  /\bspawn\s+(?:a\s+)?(?:team|agents?|swarm)\b/i,
+  /\buse\s+(?:a\s+)?(?:team|swarm|split\s*panel)\b/i,
   /\bassemble\s+(?:a\s+)?team\b/i,
-  /\blaunch\s+(?:a\s+)?team\b/i,
-  /\bneed\s+(?:a\s+)?team\b/i,
+  /\blaunch\s+(?:a\s+)?(?:team|swarm|agents?)\b/i,
+  /\bneed\s+(?:a\s+)?(?:team|agents?)\b/i,
   /\bwork\s+(?:as|with)\s+(?:a\s+)?team\b/i,
   /\bmulti[- ]?agent\b/i,
-  /\bagent\s+team\b/i,
+  /\bagent\s+(?:team|swarm)\b/i,
+  /\bsplit\s*panel\s*mode\b/i,
+  /\bswarm\s+(?:mode|function)\b/i,
+  /\bagent\s+(?:orchestrat|coordinat)/i,
+  /\busing\s+(?:split\s*panel|agents?|swarm)\b/i,
+  /\btest\s+.*\b(?:swarm|team|agents?|split\s*panel)\b/i,
 ];
 
 function detectTeamCreationIntent(input: string): boolean {
@@ -914,11 +1198,30 @@ async function handlePromptBasedTeamCreation(
   ]);
 
   try {
-    // 1. Get provider registry and determine available models
+    // 1. Detect installed CLIs to determine available models for team agents.
+    // This uses actual CLI binary detection (not API keys) so agents can use
+    // any installed CLI tool: claude, codex, gemini, kimi, ollama.
     const registry = await getRegistry();
-    const availableModels = Object.keys(SUPPORTED_MODELS).filter((id) =>
-      registry.hasModel(id),
+    const { detectInstalledProviders } = await import("../orchestrator/utils/detect-providers.js");
+    const installedClis = detectInstalledProviders();
+
+    // Map CLI provider types to SUPPORTED_MODELS provider names
+    const cliToProvider: Record<string, string> = {
+      "claude-code": "anthropic",
+      "codex": "openai",
+      "gemini-cli": "google",
+      "kimi-cli": "kimi",
+      "ollama": "ollama",
+    };
+    const installedProviderNames = new Set(
+      installedClis.map((cli) => cliToProvider[cli]).filter(Boolean),
     );
+
+    // All models from installed providers are available for team agents
+    const availableModels = Object.keys(SUPPORTED_MODELS).filter((id) => {
+      const info = SUPPORTED_MODELS[id];
+      return info !== undefined && installedProviderNames.has(info.provider);
+    });
 
     if (availableModels.length === 0) {
       setMessages((prev) => [
@@ -927,7 +1230,7 @@ async function handlePromptBasedTeamCreation(
           id: v4Id(),
           role: "system" as const,
           content:
-            "No models available. Please authenticate with at least one provider using 'aemeathcli auth login'.",
+            "No AI CLI tools detected. Install at least one: claude, codex, gemini, kimi, or ollama.",
           createdAt: new Date(),
         },
       ]);
@@ -935,9 +1238,13 @@ async function handlePromptBasedTeamCreation(
     }
 
     // 2. Use the current model to design the team via LLM
+    const [firstAvailableModel] = availableModels;
+    if (firstAvailableModel === undefined) {
+      return;
+    }
     const designModel = registry.hasModel(currentModelId)
       ? currentModelId
-      : availableModels[0]!;
+      : firstAvailableModel;
     const designProvider = registry.getForModel(designModel);
     const userPrompt = buildTeamDesignUserPrompt(input, availableModels);
 
@@ -985,22 +1292,26 @@ async function handlePromptBasedTeamCreation(
     // 5. Prepare shared resources for split-panel mode (hub-and-spoke coordination)
     // Board directory is inside the project so native CLIs (claude, codex, gemini)
     // can read/write to it — they scope file access to the current working directory.
-    const { writeFileSync, mkdirSync, mkdtempSync } = await import("node:fs");
-    const { join } = await import("node:path");
-    const { tmpdir } = await import("node:os");
+    const fs = await import("node:fs");
+    const path = await import("node:path");
+    const os = await import("node:os");
     const { execa: execaPane } = await import("execa");
 
-    const boardDir = join(process.cwd(), ".aemeathcli", "team-board");
-    mkdirSync(boardDir, { recursive: true });
+    const boardDir = path.join(process.cwd(), ".aemeathcli", "team-board");
+    fs.mkdirSync(boardDir, { recursive: true });
     // Temp dir for prompt files and manifest (not accessed by native CLIs)
-    const tempDir = mkdtempSync(join(tmpdir(), "aemeathcli-team-"));
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "aemeathcli-team-"));
 
     const shellEscape = (s: string): string => s.replace(/'/gu, "'\\''");
 
     // Identify the lead agent (first agent with "lead" type, or first "planning" role)
+    const [firstAgentSpec] = agentSpecs;
+    if (firstAgentSpec === undefined) {
+      return;
+    }
     const leadSpec = agentSpecs.find((s) => s.agentType === "lead")
       ?? agentSpecs.find((s) => s.role === "planning")
-      ?? agentSpecs[0]!;
+      ?? firstAgentSpec;
 
     // Write team manifest to shared workspace (readable by all agents)
     const teamManifest = {
@@ -1013,12 +1324,12 @@ async function handlePromptBasedTeamCreation(
         agentType: s.agentType,
         model: s.model,
         role: s.role,
-        outputFile: join(boardDir, `${s.name}.md`),
+        outputFile: path.join(boardDir, `${s.name}.md`),
       })),
       createdAt: new Date().toISOString(),
     };
-    writeFileSync(
-      join(boardDir, "team-manifest.json"),
+    fs.writeFileSync(
+      path.join(boardDir, "team-manifest.json"),
       JSON.stringify(teamManifest, null, 2),
       "utf-8",
     );
@@ -1038,8 +1349,8 @@ async function handlePromptBasedTeamCreation(
     // Write prompt files with full team context and coordination protocol
     const agentCommands: Array<{ name: string; command: string }> = [];
     for (const spec of [...workerSpecs]) {
-      const outputFile = join(boardDir, `${spec.name}.md`);
-      const promptFile = join(tempDir, `${spec.name}.txt`);
+      const outputFile = path.join(boardDir, `${spec.name}.md`);
+      const promptFile = path.join(tempDir, `${spec.name}.txt`);
 
       const prompt = [
         `# Team Role: ${spec.name}`,
@@ -1058,7 +1369,7 @@ async function handlePromptBasedTeamCreation(
         "## Shared Workspace",
         `Team board directory: ${boardDir}`,
         `Your output file: ${outputFile}`,
-        `Team manifest: ${join(boardDir, "team-manifest.json")}`,
+        `Team manifest: ${path.join(boardDir, "team-manifest.json")}`,
         "",
         "## Coordination Protocol",
         `1. Write ALL your findings, analysis, and deliverables to your output file: ${outputFile}`,
@@ -1068,14 +1379,14 @@ async function handlePromptBasedTeamCreation(
         `5. Be thorough and specific. Include file paths, line numbers, and code snippets in your findings.`,
         "",
         "## Coordination with Lead",
-        `The team lead is ${leadSpec.name}. Check their coordination plan at: ${join(boardDir, "coordinator.md")}`,
+        `The team lead is ${leadSpec.name}. Check their coordination plan at: ${path.join(boardDir, "coordinator.md")}`,
         `After completing your work, the lead agent will read your output and synthesize findings.`,
         "",
         "## User's Original Request",
         input,
       ].join("\n");
 
-      writeFileSync(promptFile, prompt, "utf-8");
+      fs.writeFileSync(promptFile, prompt, "utf-8");
 
       // Each agent pane runs the native CLI directly in interactive mode
       // (claude, codex, gemini, kimi) instead of wrapping through AemeathCLI's
@@ -1083,17 +1394,17 @@ async function handlePromptBasedTeamCreation(
       // writing code, running commands, etc. — matching Claude Code agent teams.
       const modelInfo = SUPPORTED_MODELS[spec.model];
       const provider = modelInfo?.provider ?? "anthropic";
-      const launcherFile = join(tempDir, `${spec.name}-launch.sh`);
+      const launcherFile = path.join(tempDir, `${spec.name}-launch.sh`);
       const cmd = writeAgentLauncherScript(
         provider, spec.model, promptFile, launcherFile,
-        projectRoot, shellEscape, writeFileSync,
+        projectRoot, shellEscape, fs.writeFileSync,
       );
       agentCommands.push({ name: spec.name, command: cmd });
     }
 
     // Build the lead agent's coordination task for auto-submission in the left pane.
     // The leader actively works (not idle) — it coordinates, analyzes, and synthesizes.
-    const leadOutputFile = join(boardDir, `${leadSpec.name}.md`);
+    const leadOutputFile = path.join(boardDir, `${leadSpec.name}.md`);
     const leadCoordinationTask = [
       `I am the team coordinator (${leadSpec.name}, ${leadSpec.model}).`,
       "",
@@ -1101,20 +1412,20 @@ async function handlePromptBasedTeamCreation(
       "",
       `## My Responsibilities`,
       `1. Break down the user's request into clear subtasks for each team member.`,
-      `2. Write my coordination plan and task assignments to: ${join(boardDir, "coordinator.md")}`,
+      `2. Write my coordination plan and task assignments to: ${path.join(boardDir, "coordinator.md")}`,
       `3. After completing my own analysis, read other agents' output files in ${boardDir}/ to check progress.`,
-      `4. Synthesize findings from all agents into a final team summary at: ${join(boardDir, "SUMMARY.md")}`,
+      `4. Synthesize findings from all agents into a final team summary at: ${path.join(boardDir, "SUMMARY.md")}`,
       `5. Flag any conflicts, gaps, or overlaps between agents' work.`,
       "",
       `## Team Members Working in Parallel Panes`,
-      ...workerSpecs.map((s) => `- ${s.name} (${s.model}): writing to ${join(boardDir, s.name + ".md")}`),
+      ...workerSpecs.map((s) => `- ${s.name} (${s.model}): writing to ${path.join(boardDir, s.name + ".md")}`),
       "",
       `## My Output File: ${leadOutputFile}`,
       "",
       `## User's Original Request`,
       input,
       "",
-      `Start by reading the codebase and writing my coordination plan to ${join(boardDir, "coordinator.md")}.`,
+      `Start by reading the codebase and writing my coordination plan to ${path.join(boardDir, "coordinator.md")}.`,
     ].join("\n");
 
     // 6. iTerm2 native pane support (macOS — preferred when in iTerm2)
@@ -1144,8 +1455,7 @@ async function handlePromptBasedTeamCreation(
       scriptLines.push("  tell current window");
       scriptLines.push("    set leaderSession to current session of current tab");
 
-      for (let i = 0; i < agentCommands.length; i++) {
-        const agent = agentCommands[i]!;
+      for (const [i, agent] of agentCommands.entries()) {
         const prevVar = i === 0 ? "leaderSession" : `agent${i - 1}`;
         const curVar = `agent${i}`;
         // First agent: split leader vertically (creates right column)
@@ -1170,8 +1480,8 @@ async function handlePromptBasedTeamCreation(
       scriptLines.push("end tell");
 
       const script = scriptLines.join("\n");
-      const scriptFile = join(tempDir, "create-panes.applescript");
-      writeFileSync(scriptFile, script, "utf-8");
+      const scriptFile = path.join(tempDir, "create-panes.applescript");
+      fs.writeFileSync(scriptFile, script, "utf-8");
 
       try {
         await execaPane("osascript", [scriptFile]);
@@ -1200,9 +1510,8 @@ async function handlePromptBasedTeamCreation(
         } catch { /* no matching processes */ }
         // Clean up temp files and board directory
         try {
-          const { rmSync } = await import("node:fs");
-          rmSync(tempDir, { recursive: true, force: true });
-          rmSync(boardDir, { recursive: true, force: true });
+          fs.rmSync(tempDir, { recursive: true, force: true });
+          fs.rmSync(boardDir, { recursive: true, force: true });
         } catch { /* non-critical */ }
       };
 
@@ -1256,8 +1565,7 @@ async function handlePromptBasedTeamCreation(
         const leaderPaneId = currentResult.stdout.trim();
         const agentPaneIds: string[] = [];
 
-        for (let i = 0; i < agentCommands.length; i++) {
-          const agent = agentCommands[i]!;
+        for (const [i, agent] of agentCommands.entries()) {
           const splitResult = await execaPane("tmux", [
             "split-window",
             i % 2 === 0 ? "-h" : "-v",
@@ -1283,9 +1591,8 @@ async function handlePromptBasedTeamCreation(
             try { await ex("tmux", ["kill-pane", "-t", pid]); } catch { /* pane may be gone */ }
           }
           try {
-            const { rmSync } = await import("node:fs");
-            rmSync(tempDir, { recursive: true, force: true });
-            rmSync(boardDir, { recursive: true, force: true });
+            fs.rmSync(tempDir, { recursive: true, force: true });
+            fs.rmSync(boardDir, { recursive: true, force: true });
           } catch { /* non-critical */ }
         };
 
@@ -1328,7 +1635,7 @@ async function handlePromptBasedTeamCreation(
         paneId: `pane-${i}`,
         agentName: spec.name,
         model: spec.model,
-        role: spec.role as ModelRole,
+        role: spec.role,
         title: `${spec.name} (${spec.model})`,
       }));
 
@@ -1340,8 +1647,7 @@ async function handlePromptBasedTeamCreation(
 
       await tmux.createPanes(layoutConfig);
 
-      for (let i = 0; i < agentCommands.length; i++) {
-        const agent = agentCommands[i]!;
+      for (const [i, agent] of agentCommands.entries()) {
         const paneId = `pane-${i}`;
         await tmux.sendCommand(paneId, agent.command);
       }
@@ -1351,11 +1657,26 @@ async function handlePromptBasedTeamCreation(
       activeTmuxCleanup = async () => {
         await tmux.destroy();
         try {
-          const { rmSync } = await import("node:fs");
-          rmSync(tempDir, { recursive: true, force: true });
-          rmSync(boardDir, { recursive: true, force: true });
+          fs.rmSync(tempDir, { recursive: true, force: true });
+          fs.rmSync(boardDir, { recursive: true, force: true });
         } catch { /* non-critical */ }
       };
+
+      // Show pre-attach hint
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: v4Id(),
+          role: "system" as const,
+          content:
+            `Attaching to tmux session "${sessionName}" with ${agentSpecs.length} agents\u2026\n\n` +
+            `Inside tmux:\n` +
+            `  Ctrl+B \u2192/\u2190/\u2191/\u2193   Switch pane\n` +
+            `  Ctrl+B  d            Detach (return to aemeath)\n` +
+            `  Ctrl+B  z            Zoom pane fullscreen`,
+          createdAt: new Date(),
+        },
+      ]);
 
       // Auto-attach: temporarily release terminal from Ink, hand it to tmux.
       const { execFileSync } = await import("node:child_process");
@@ -1390,10 +1711,15 @@ async function handlePromptBasedTeamCreation(
           id: v4Id(),
           role: "system" as const,
           content:
-            `Detached from tmux. Agents may still be running.\n` +
-            `${agentLines.join("\n")}\n` +
-            `Re-attach: tmux attach -t ${sessionName}\n` +
-            "/team stop to shut down all agents.",
+            `Detached from tmux. Agents may still be running.\n\n` +
+            `Agents:\n${agentLines.join("\n")}\n\n` +
+            `Keybindings (inside tmux):\n` +
+            `  Ctrl+B \u2192 \u2190 \u2191 \u2193   Switch between panes\n` +
+            `  Ctrl+B  d            Detach (return here)\n` +
+            `  Ctrl+B  z            Zoom active pane (fullscreen toggle)\n` +
+            `  Ctrl+B  x            Close active pane\n\n` +
+            `Re-attach:  tmux attach -t ${sessionName}\n` +
+            `/team stop  Shut down all agents and kill session`,
           createdAt: new Date(),
         },
       ]);
@@ -1406,7 +1732,12 @@ async function handlePromptBasedTeamCreation(
       {
         id: v4Id(),
         role: "system" as const,
-        content: `Designed ${agentSpecs.length}-agent team. Starting agents (in-process mode)...`,
+        content:
+          `Designed ${agentSpecs.length}-agent team. Starting agents (in-process mode)\u2026\n\n` +
+          `Keybindings:\n` +
+          `  Tab              Switch to next agent\n` +
+          `  Ctrl+1-${agentSpecs.length}          Jump to agent N\n` +
+          `  /team stop       Exit team mode`,
         createdAt: new Date(),
       },
     ]);
@@ -1417,7 +1748,7 @@ async function handlePromptBasedTeamCreation(
     activeTeamName = teamName;
     activeTmuxCleanup = undefined;
 
-    const teamConfig = await manager.createTeam(teamName, {
+    const teamConfig = manager.createTeam(teamName, {
       description: `Agent team for: ${input.slice(0, 120)}`,
       agents: agentDefinitions,
     });
@@ -1470,8 +1801,7 @@ async function handlePromptBasedTeamCreation(
     await manager.startAgents(teamName);
 
     // Assign tasks — use LLM-generated taskPrompt for each agent
-    for (let i = 0; i < teamConfig.members.length; i++) {
-      const member = teamConfig.members[i]!;
+    for (const [i, member] of teamConfig.members.entries()) {
       const spec = agentSpecs[i];
       const taskId = v4Id();
       const prompt = spec
@@ -1622,13 +1952,14 @@ async function handleSkillCommand(args: readonly string[], ctx: ICommandContext)
   if (subcommand === "list") {
     try {
       const { SkillRegistry } = await import("../skills/registry.js");
+      const { findProjectRoot } = await import("../utils/pathResolver.js");
       const registry = new SkillRegistry();
-      await registry.initialize();
+      await registry.initialize(findProjectRoot());
       const skills = registry.listAll();
       if (skills.length === 0) {
-        addSystemMessage(ctx, "No skills found.\nAdd skills in ~/.aemeathcli/skills/ or .aemeathcli/skills/");
+        addSystemMessage(ctx, "No skills found.\nAdd skills in ~/.agents/skills/, ~/.aemeathcli/skills/, .agents/skills/, or .aemeathcli/skills/");
       } else {
-        const lines = skills.map((s) => `  $${s.name.padEnd(16)} ${s.description}`);
+        const lines = skills.map((s) => `  $${s.name.padEnd(16)} ${s.description}  [${s.source}]`);
         addSystemMessage(ctx, `Available Skills:\n${lines.join("\n")}`);
       }
     } catch (error: unknown) {
@@ -1824,8 +2155,9 @@ async function handleSkillInvocation(
   try {
     const { SkillRegistry } = await import("../skills/registry.js");
     const { SkillExecutor } = await import("../skills/executor.js");
+    const { findProjectRoot } = await import("../utils/pathResolver.js");
     const registry = new SkillRegistry();
-    await registry.initialize();
+    await registry.initialize(findProjectRoot());
 
     const executor = new SkillExecutor(registry);
     const result = await executor.activateByTrigger(trigger);
@@ -1872,69 +2204,7 @@ export async function startChatSession(options: IChatSessionOptions): Promise<vo
   await waitUntilExit();
 }
 
-type FirstRunProvider = "claude" | "codex" | "gemini" | "kimi";
-
-interface IFirstRunLogin {
-  login(): Promise<unknown>;
-}
-
-async function createFirstRunLogin(provider: FirstRunProvider): Promise<IFirstRunLogin> {
-  switch (provider) {
-    case "claude": {
-      const { ClaudeLogin } = await import("../auth/providers/claude-login.js");
-      return new ClaudeLogin();
-    }
-    case "codex": {
-      const { CodexLogin } = await import("../auth/providers/codex-login.js");
-      return new CodexLogin();
-    }
-    case "gemini": {
-      const { GeminiLogin } = await import("../auth/providers/gemini-login.js");
-      return new GeminiLogin();
-    }
-    case "kimi": {
-      const { KimiLogin } = await import("../auth/providers/kimi-login.js");
-      return new KimiLogin();
-    }
-  }
-}
-
 export async function runFirstRunSetup(): Promise<void> {
-  const { confirm } = await import("@inquirer/prompts");
-  const pc = await import("picocolors");
-
-  process.stdout.write(
-    [
-      "",
-      pc.default.cyan("  ╔══════════════════════════════════════════════╗"),
-      pc.default.cyan("  ║           Welcome to AemeathCLI              ║"),
-      pc.default.cyan("  ║    Multi-Model CLI Coding Tool v1.0.0        ║"),
-      pc.default.cyan("  ╚══════════════════════════════════════════════╝"),
-      "",
-      "  Let's get you set up:",
-      "",
-    ].join("\n"),
-  );
-
-  const providers: readonly FirstRunProvider[] = ["claude", "codex", "gemini", "kimi"];
-
-  for (const provider of providers) {
-    const shouldLogin = await confirm({
-      message: `Log in to ${provider}?`,
-      default: provider !== "kimi",
-    });
-
-    if (shouldLogin) {
-      process.stdout.write(pc.default.cyan(`  Logging in to ${provider}...\n`));
-      try {
-        const login = await createFirstRunLogin(provider);
-        await login.login();
-        process.stdout.write(pc.default.green(`  ✓ ${provider} - Logged in successfully\n`));
-      } catch {
-        process.stdout.write(pc.default.red(`  ✗ ${provider} - Login failed (you can retry later)\n`));
-      }
-    }
-  }
-
-  process.stdout.write(pc.default.green("\n  ✓ Configuration saved. Ready!\n\n"));
+  const { runFirstRunSetup: runCliFirstRunSetup } = await import("../cli/setup/first-run.js");
+  await runCliFirstRunSetup();
 }

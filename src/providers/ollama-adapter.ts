@@ -5,7 +5,6 @@
  */
 
 import { logger } from "../utils/logger.js";
-import { ModelNotFoundError } from "../types/errors.js";
 import { SUPPORTED_MODELS } from "../types/model.js";
 import type { IModelInfo, ProviderName, ModelRole } from "../types/model.js";
 import type {
@@ -24,7 +23,18 @@ const DEFAULT_BASE_URL = "http://localhost:11434";
 const CHARS_PER_TOKEN_ESTIMATE = 4;
 
 interface OllamaListResponse { models: Array<{ name: string; size: number }> }
-interface OpenAIMessage { role: string; content: string }
+interface OpenAIStandardMessage {
+  role: "system" | "user" | "assistant";
+  content: string | null;
+  tool_calls?: readonly OllamaToolCallRef[] | undefined;
+}
+interface OpenAIToolResultMessage {
+  role: "tool";
+  content: string;
+  tool_call_id: string;
+  name: string;
+}
+type OpenAIMessage = OpenAIStandardMessage | OpenAIToolResultMessage;
 interface OpenAITool { type: "function"; function: { name: string; description: string; parameters: Record<string, unknown> } }
 interface OllamaToolCallRef { id: string; type: string; function: { name: string; arguments: string } }
 interface OllamaChoice {
@@ -36,7 +46,45 @@ interface OllamaUsage { prompt_tokens: number; completion_tokens: number; total_
 interface OllamaChatResponse { id: string; choices: OllamaChoice[]; usage?: OllamaUsage }
 
 function convertMessages(messages: readonly IChatMessage[]): OpenAIMessage[] {
-  return messages.map((msg) => ({ role: msg.role, content: msg.content }));
+  const converted: OpenAIMessage[] = [];
+
+  for (const msg of messages) {
+    if (msg.role === "assistant" && msg.toolCalls !== undefined && msg.toolCalls.length > 0) {
+      converted.push({
+        role: "assistant" as const,
+        content: msg.content.length > 0 ? msg.content : null,
+        tool_calls: msg.toolCalls.map((toolCall) => ({
+          id: toolCall.id,
+          type: "function",
+          function: {
+            name: toolCall.name,
+            arguments: JSON.stringify(toolCall.arguments),
+          },
+        })),
+      });
+      continue;
+    }
+
+    if (msg.role === "tool") {
+      const toolCall = msg.toolCalls?.[0];
+      if (toolCall !== undefined) {
+        converted.push({
+          role: "tool" as const,
+          content: msg.content,
+          tool_call_id: toolCall.id,
+          name: toolCall.name,
+        });
+        continue;
+      }
+    }
+
+    converted.push({
+      role: msg.role as "system" | "user" | "assistant",
+      content: msg.content,
+    });
+  }
+
+  return converted;
 }
 
 function convertTools(tools: readonly IToolDefinition[] | undefined): OpenAITool[] | undefined {
@@ -80,6 +128,7 @@ function makeOllamaModelInfo(modelName: string): IModelInfo {
 
 export class OllamaAdapter implements IModelProvider {
   readonly name = PROVIDER_NAME;
+  readonly supportsToolCalling = true;
 
   private readonly baseUrl: string;
   private cachedModels: string[] | undefined;
@@ -117,7 +166,7 @@ export class OllamaAdapter implements IModelProvider {
   }
 
   async chat(request: IChatRequest): Promise<IChatResponse> {
-    const modelInfo = this.getModelInfo(request.model);
+    this.getModelInfo(request.model);
     const messages = convertMessages(request.messages);
     const tools = convertTools(request.tools);
 
@@ -243,8 +292,8 @@ export class OllamaAdapter implements IModelProvider {
     }
   }
 
-  async countTokens(text: string, _model: string): Promise<number> {
-    return Math.ceil(text.length / CHARS_PER_TOKEN_ESTIMATE);
+  countTokens(text: string, _model: string): Promise<number> {
+    return Promise.resolve(Math.ceil(text.length / CHARS_PER_TOKEN_ESTIMATE));
   }
 
   getModelInfo(model: string): IModelInfo {

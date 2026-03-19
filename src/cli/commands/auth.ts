@@ -4,7 +4,6 @@
 
 import { Command } from "commander";
 import pc from "picocolors";
-import { select } from "@inquirer/prompts";
 import type { ProviderName } from "../../types/index.js";
 
 const VALID_PROVIDERS = ["claude", "codex", "gemini", "kimi"] as const;
@@ -12,6 +11,112 @@ type LoginProvider = (typeof VALID_PROVIDERS)[number];
 
 function isValidProvider(value: string): value is LoginProvider {
   return (VALID_PROVIDERS as readonly string[]).includes(value);
+}
+
+function isInteractiveTerminal(): boolean {
+  return process.stdin.isTTY && process.stdout.isTTY;
+}
+
+function validProvidersMessage(): string {
+  return VALID_PROVIDERS.join(", ");
+}
+
+async function promptForProvider(): Promise<LoginProvider> {
+  const { select } = await import("@inquirer/prompts");
+  return select<LoginProvider>({
+    message: "Select a provider to log in to:",
+    choices: [
+      { name: "Claude  (Anthropic)", value: "claude" },
+      { name: "Codex   (OpenAI)", value: "codex" },
+      { name: "Gemini  (Google)", value: "gemini" },
+      { name: "Kimi    (Moonshot)", value: "kimi" },
+    ],
+  });
+}
+
+async function readSecretFromStdin(): Promise<string> {
+  const chunks: string[] = [];
+  for await (const chunk of process.stdin) {
+    chunks.push(String(chunk));
+  }
+  return chunks.join("").trim();
+}
+
+async function resolveLoginProvider(providerArg: string | undefined): Promise<LoginProvider | undefined> {
+  if (providerArg !== undefined) {
+    if (!isValidProvider(providerArg)) {
+      process.stderr.write(
+        pc.red(`Unknown provider: "${providerArg}". Valid: ${validProvidersMessage()}\n`),
+      );
+      process.exitCode = 2;
+      return undefined;
+    }
+    return providerArg;
+  }
+
+  if (!isInteractiveTerminal()) {
+    process.stderr.write(
+      pc.red(
+        "Interactive provider selection requires a TTY. Use `aemeathcli auth login <provider>` or `aemeathcli auth set-key <provider> --stdin`.\n",
+      ),
+    );
+    process.exitCode = 2;
+    return undefined;
+  }
+
+  return promptForProvider();
+}
+
+async function runLoginFlow(provider: LoginProvider): Promise<void> {
+  process.stdout.write(pc.cyan(`Logging in to ${provider}...\n`));
+
+  const loginModule = await loadLoginModule(provider);
+  await loginModule.login();
+  process.stdout.write(pc.green(`Successfully logged in to ${provider}\n`));
+}
+
+interface IAuthStatusRecord {
+  readonly provider: LoginProvider;
+  readonly loggedIn: boolean;
+  readonly authMethod?: string | undefined;
+  readonly email?: string | undefined;
+  readonly plan?: string | undefined;
+  readonly launchReady: boolean;
+  readonly launchMethod?: string | undefined;
+}
+
+async function getAuthStatusRecord(provider: LoginProvider): Promise<IAuthStatusRecord> {
+  const providerName = PROVIDER_MODEL_SWITCH[provider].provider;
+  const { SessionManager } = await import("../../auth/session-manager.js");
+  const { ApiKeyFallback } = await import("../../auth/api-key-fallback.js");
+
+  const sessionManager = new SessionManager();
+  const fallback = new ApiKeyFallback();
+  const activeCredential = await sessionManager.getActiveCredential(providerName).catch(() => undefined);
+  const storedApiKey = await fallback.getCredential(providerName);
+  const envCredential = fallback.getFromEnvironment(providerName);
+  const launchCredential = storedApiKey ?? envCredential;
+
+  let email: string | undefined;
+  let plan: string | undefined;
+  if (activeCredential?.method === "native_login") {
+    const loginModule = await loadLoginModule(provider);
+    const status = await loginModule
+      .getStatus()
+      .catch(() => ({ loggedIn: true, email: undefined, plan: undefined }));
+    email = status.email;
+    plan = status.plan;
+  }
+
+  return {
+    provider,
+    loggedIn: activeCredential !== undefined,
+    authMethod: activeCredential?.method,
+    email,
+    plan,
+    launchReady: launchCredential !== undefined,
+    launchMethod: launchCredential?.method,
+  };
 }
 
 const PROVIDER_MODEL_SWITCH: Readonly<Record<LoginProvider, { provider: ProviderName; model: string }>> = {
@@ -31,37 +136,13 @@ export function createLoginCommand(): Command {
     .description("Log in to a provider (interactive)")
     .argument("[provider]", "Provider to log in to (claude, codex, gemini, kimi)")
     .action(async (providerArg: string | undefined) => {
-      let provider: LoginProvider;
-
-      if (providerArg !== undefined) {
-        // Direct invocation: `aemeathcli login claude`
-        if (!isValidProvider(providerArg)) {
-          process.stderr.write(
-            pc.red(`Unknown provider: "${providerArg}". Valid: ${VALID_PROVIDERS.join(", ")}\n`),
-          );
-          process.exitCode = 2;
-          return;
-        }
-        provider = providerArg;
-      } else {
-        // Interactive selection
-        provider = await select<LoginProvider>({
-          message: "Select a provider to log in to:",
-          choices: [
-            { name: "Claude  (Anthropic)", value: "claude" },
-            { name: "Codex   (OpenAI)", value: "codex" },
-            { name: "Gemini  (Google)", value: "gemini" },
-            { name: "Kimi    (Moonshot)", value: "kimi" },
-          ],
-        });
+      const provider = await resolveLoginProvider(providerArg);
+      if (provider === undefined) {
+        return;
       }
 
-      process.stdout.write(pc.cyan(`\nLogging in to ${provider}...\n`));
-
       try {
-        const loginModule = await loadLoginModule(provider);
-        await loginModule.login();
-        process.stdout.write(pc.green(`Successfully logged in to ${provider}\n`));
+        await runLoginFlow(provider);
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
         process.stderr.write(pc.red(`Login failed: ${message}\n`));
@@ -75,23 +156,16 @@ export function createAuthCommand(): Command {
     .description("Authentication & account management");
 
   auth
-    .command("login <provider>")
+    .command("login [provider]")
     .description("Log in to a provider (claude, codex, gemini, kimi)")
-    .action(async (provider: string) => {
-      if (!isValidProvider(provider)) {
-        process.stderr.write(
-          pc.red(`Unknown provider: "${provider}". Valid: ${VALID_PROVIDERS.join(", ")}\n`),
-        );
-        process.exitCode = 2;
+    .action(async (providerArg: string | undefined) => {
+      const provider = await resolveLoginProvider(providerArg);
+      if (provider === undefined) {
         return;
       }
 
-      process.stdout.write(pc.cyan(`Logging in to ${provider}...\n`));
-
       try {
-        const loginModule = await loadLoginModule(provider);
-        await loginModule.login();
-        process.stdout.write(pc.green(`Successfully logged in to ${provider}\n`));
+        await runLoginFlow(provider);
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
         process.stderr.write(pc.red(`Login failed: ${message}\n`));
@@ -139,50 +213,52 @@ export function createAuthCommand(): Command {
   auth
     .command("status")
     .description("Show login status for all providers")
-    .action(async () => {
-      for (const provider of VALID_PROVIDERS) {
-        try {
-          const loginModule = await loadLoginModule(provider);
-          const status = await loginModule.getStatus();
-          if (status.loggedIn) {
-            process.stdout.write(
-              pc.green(`  ✓ ${provider}`) +
-                ` — Logged in as ${status.email ?? "unknown"} (${status.plan ?? "unknown plan"})\n`,
-            );
-          } else {
-            process.stdout.write(pc.red(`  ✗ ${provider}`) + " — Not logged in\n");
-          }
-        } catch {
-          process.stdout.write(pc.red(`  ✗ ${provider}`) + " — Not configured\n");
-        }
+    .option("--json", "Output machine-readable JSON")
+    .action(async (options: { json?: boolean }) => {
+      const records = await Promise.all(VALID_PROVIDERS.map(async (provider) => getAuthStatusRecord(provider)));
+
+      if (options.json) {
+        process.stdout.write(`${JSON.stringify({ providers: records }, null, 2)}\n`);
+        return;
       }
 
-      try {
-        const { ApiKeyFallback } = await import("../../auth/api-key-fallback.js");
-        const fallback = new ApiKeyFallback();
-        const apiKeyStatus: ReadonlyArray<{ label: string; provider: ProviderName }> = [
-          { label: "Claude", provider: "anthropic" },
-          { label: "OpenAI", provider: "openai" },
-          { label: "Google", provider: "google" },
-          { label: "Kimi", provider: "kimi" },
-        ];
-
-        process.stdout.write("\nFallback API keys:\n");
-        for (const item of apiKeyStatus) {
-          const hasKey = await fallback.hasKey(item.provider);
-          process.stdout.write(`  ${item.label}: ${hasKey ? "set" : "not set"}\n`);
+      for (const record of records) {
+        if (!record.loggedIn) {
+          process.stdout.write(pc.red(`  ✗ ${record.provider}`) + " — Not logged in\n");
+          continue;
         }
-      } catch {
-        // Best-effort status output
+
+        const identity =
+          record.email !== undefined
+            ? ` as ${record.email}${record.plan !== undefined ? ` (${record.plan})` : ""}`
+            : "";
+        const launchStatus = record.launchReady
+          ? `launch-ready via ${record.launchMethod ?? "api key"}`
+          : "launch needs API key or env var";
+
+        process.stdout.write(
+          pc.green(`  ✓ ${record.provider}`) +
+            ` — ${record.authMethod ?? "configured"}${identity}; ${launchStatus}\n`,
+        );
       }
     });
 
   auth
-    .command("set-key <provider> <key>")
+    .command("set-key <provider> [key]")
     .description("Set an API key for a provider (fallback for CI/headless)")
-    .action(async (provider: string, key: string) => {
+    .option("--stdin", "Read the API key from stdin")
+    .action(async (provider: string, key: string | undefined, options: { stdin?: boolean }) => {
       if (!isValidProvider(provider) && provider !== "openai" && provider !== "google") {
         process.stderr.write(pc.red(`Unknown provider: "${provider}"\n`));
+        process.exitCode = 2;
+        return;
+      }
+
+      const resolvedKey = options.stdin ? await readSecretFromStdin() : key;
+      if (!resolvedKey) {
+        process.stderr.write(
+          pc.red("Provide an API key argument or use --stdin to read it from standard input.\n"),
+        );
         process.exitCode = 2;
         return;
       }
@@ -200,7 +276,7 @@ export function createAuthCommand(): Command {
         };
         const mappedProvider = providerMap[provider];
         if (mappedProvider) {
-          await fallback.setKey(mappedProvider, key);
+          await fallback.setKey(mappedProvider, resolvedKey);
           process.stdout.write(pc.green(`API key set for ${provider}\n`));
         }
       } catch (error: unknown) {

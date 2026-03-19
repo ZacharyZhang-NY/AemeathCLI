@@ -1,6 +1,6 @@
 /**
- * Autocomplete data definitions for InputBar triggers
- * Shared by InputBar autocomplete popup and /help command
+ * Autocomplete data definitions for InputBar triggers.
+ * Skills are dynamically discovered from disk at startup.
  */
 
 // ── Slash Commands ──────────────────────────────────────────────────────────
@@ -33,6 +33,9 @@ export const SLASH_COMMANDS: readonly ISlashCommand[] = [
   { command: "/login logout", description: "Log out of a provider" },
   { command: "/config get", description: "Get a configuration value" },
   { command: "/config set", description: "Set a configuration value" },
+  { command: "/launch", description: "Start the agent orchestrator" },
+  { command: "/history", description: "List past conversations" },
+  { command: "/resume", description: "Resume a past conversation by number or ID" },
   { command: "/quit", description: "Exit" },
   { command: "/exit", description: "Exit" },
 ];
@@ -67,9 +70,10 @@ export const CODE_REFS: readonly IAutocompleteItem[] = [
   { label: "`src/utils/", description: "Utility functions" },
 ];
 
-// ── Skill Invocation ($) ────────────────────────────────────────────────────
+// ── Skill Invocation ($) — dynamically populated ────────────────────────────
 
-export const SKILL_REFS: readonly IAutocompleteItem[] = [
+/** Fallback built-in skills shown before dynamic discovery completes. */
+const BUILTIN_SKILL_REFS: readonly IAutocompleteItem[] = [
   { label: "$review", description: "Comprehensive code review" },
   { label: "$commit", description: "Smart git commit with message generation" },
   { label: "$plan", description: "Create implementation plan from requirements" },
@@ -77,6 +81,25 @@ export const SKILL_REFS: readonly IAutocompleteItem[] = [
   { label: "$test", description: "Generate tests for code" },
   { label: "$refactor", description: "Refactoring with safety checks" },
 ];
+
+/**
+ * Mutable skill list — starts with built-ins, then gets replaced
+ * by the full set once SkillRegistry finishes scanning disk.
+ */
+let dynamicSkillRefs: readonly IAutocompleteItem[] = BUILTIN_SKILL_REFS;
+
+/**
+ * Replace the skill autocomplete list with dynamically discovered skills.
+ * Called from App.tsx after SkillRegistry.initialize() completes.
+ */
+export function registerDynamicSkills(skills: readonly IAutocompleteItem[]): void {
+  dynamicSkillRefs = skills.length > 0 ? skills : BUILTIN_SKILL_REFS;
+}
+
+/** Current skill list (dynamic once loaded, built-in fallback otherwise). */
+export function getSkillRefs(): readonly IAutocompleteItem[] {
+  return dynamicSkillRefs;
+}
 
 // ── Trigger Detection ───────────────────────────────────────────────────────
 
@@ -97,7 +120,7 @@ export function getAutocompleteItems(trigger: AutocompleteTrigger, query: string
       return CODE_REFS.filter((ref) => ref.label.toLowerCase().includes(normalizedQuery));
     }
     case "$": {
-      return SKILL_REFS.filter((ref) => ref.label.toLowerCase().includes(normalizedQuery));
+      return dynamicSkillRefs.filter((ref) => ref.label.toLowerCase().includes(normalizedQuery));
     }
   }
 }

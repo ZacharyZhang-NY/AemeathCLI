@@ -21,11 +21,11 @@
 ```
   ╔══════════════════════════════════════════════╗
   ║           Welcome to AemeathCLI              ║
-  ║    Multi-Model CLI Coding Tool v1.0.0        ║
+  ║    Multi-Model CLI Coding Tool v1.0.10       ║
   ╚══════════════════════════════════════════════╝
 ```
 
-AemeathCLI orchestrates **multiple AI models** across **parallel agent teams** in your terminal. Route Claude for planning, GPT for coding, Gemini for reviews -- all in split-panel panes (iTerm2 native on macOS, tmux elsewhere) with real-time streaming, hub-and-spoke coordination, cost tracking, and enterprise-grade security.
+AemeathCLI orchestrates **multiple AI models** across **parallel agent teams** in your terminal. Route Claude for planning, GPT for coding, Gemini for reviews -- with real-time streaming, tmux-backed visual orchestration when enabled, cost tracking, and enterprise-grade security.
 
 <br />
 
@@ -55,7 +55,7 @@ AemeathCLI orchestrates **multiple AI models** across **parallel agent teams** i
 Most AI coding tools lock you into a single model. AemeathCLI breaks that ceiling:
 
 - **Multi-model orchestration** -- Use the right model for each task. Claude Opus for architecture, GPT-5.2 for implementation, Gemini 2.5 Pro for code review -- in one session.
-- **Agent teams** -- Describe what you need in plain English and the LLM designs the team. Agents spawn in iTerm2/tmux split panes with a hub-and-spoke coordination model -- a leader orchestrates, teammates execute, and results are synthesized through a shared board.
+- **Agent teams** -- Describe what you need in plain English and the LLM designs the team. Agents can run under the orchestrator with tmux-backed visual panes when enabled, while a leader orchestrates, teammates execute, and results are synthesized through a shared board.
 - **Smart routing** -- Define role-based routing rules. When you switch to "review" mode, the system automatically picks the best model for reviewing code.
 - **Cost-aware** -- Real-time token counting, per-model cost tracking, configurable budget warnings and hard stops. Know exactly what you're spending.
 - **Skills & MCP** -- Extend functionality with YAML-defined skills and Model Context Protocol servers. Your tools, your workflow.
@@ -70,9 +70,11 @@ Most AI coding tools lock you into a single model. AemeathCLI breaks that ceilin
 npm install -g aemeathcli
 
 # Authenticate with your providers
-aemeathcli auth login claude
-aemeathcli auth login codex
-aemeathcli auth login gemini
+aemeathcli login
+
+# For orchestrator mode, also configure API keys
+export ANTHROPIC_API_KEY=your_key_here
+export OPENAI_API_KEY=your_key_here
 
 # Start coding
 aemeathcli "Refactor the authentication module to use JWT tokens"
@@ -88,8 +90,11 @@ That's it. AemeathCLI detects your project, picks the best model, and starts str
 
 - **Node.js** >= 20.0.0
 - **npm** >= 9 (or pnpm / yarn)
-- **tmux** (optional, for split-panel mode)
-- **iTerm2** (optional, macOS native pane support)
+- **tmux** (optional, for `launch --visual`)
+- Native build tools for Node modules such as `node-pty` and `better-sqlite3`
+  - macOS: Xcode Command Line Tools
+  - Linux: Python, make, and a C/C++ compiler
+  - Windows: Visual Studio Build Tools or an equivalent MSVC toolchain
 
 ### Install
 
@@ -103,7 +108,7 @@ The CLI installs two commands: `aemeathcli` and the shorthand `ac`.
 
 ```bash
 aemeathcli --version
-# 1.0.0
+# 1.0.10
 ```
 
 ### First Run
@@ -112,7 +117,7 @@ aemeathcli --version
 aemeathcli config init
 ```
 
-This launches an interactive setup wizard that walks you through provider authentication and initial configuration.
+This launches an interactive setup wizard that walks you through provider authentication and initial configuration. For `launch`, configure API keys with `aemeathcli auth set-key <provider>` or the matching environment variables.
 
 <br />
 
@@ -185,21 +190,22 @@ aemeathcli review src/auth/ src/api/middleware.ts
 aemeathcli test "Generate tests for the recent changes"
 ```
 
-### Team Mode
+### Orchestrator Mode
 
-Teams are created through **natural language** in the interactive chat -- no CLI subcommands needed:
+The production orchestration surface is `launch`:
 
 ```bash
-# Start interactive session
-aemeathcli
+# Run one orchestrated task and exit
+aemeathcli launch --task "Refactor the authentication module"
 
-# Then describe the team you need:
-> Create a team to refactor the authentication module
-> I need agents to review this PR from security, architecture, and code quality angles
-> Spawn a team to build the new payment feature with planning, coding, and testing
+# Start the interactive orchestrator REPL
+aemeathcli launch
+
+# Enable tmux visual mode when available
+aemeathcli launch --visual
 ```
 
-The LLM designs the optimal team (roles, models, agent count) and spawns each agent in its own split pane. On macOS with iTerm2, panes are native terminal splits. On Linux or inside tmux, panes use tmux splits. Stop a team with `/team stop`.
+The supervisor profile decomposes the task, spawns specialized workers, and collects results. Natural-language team design inside chat is still supported as an interactive UX pattern, but the documented CLI contract for orchestration is `launch`, `info`, and `shutdown`. `launch` requires a tool-calling-capable provider for the supervisor, so browser login alone is not enough; set an API key for the supervisor provider as well.
 
 ```
 ┌───────────────────────┬───────────────────────┐
@@ -282,24 +288,22 @@ Customize routing in `~/.aemeathcli/config.json`:
 
 ## Agent Teams
 
-Create parallel agent teams through natural language. The LLM designs the team, split panes launch automatically, and agents coordinate via a hub-and-spoke model.
+Create parallel agent teams through the orchestrator. The supervisor profile delegates to specialized worker profiles, optional tmux panes launch when enabled, and workers coordinate via a hub-and-spoke model.
 
 ### How It Works
 
-1. **Natural language creation** -- Describe the team you need ("Create a team to review the codebase"). No CLI subcommands or JSON config needed.
-2. **LLM-driven design** -- The active model decides the optimal team: agent count, names, roles, models, and task prompts -- all tailored to your request.
-3. **Split-panel mode** -- Each agent gets its own terminal pane (iTerm2 native splits on macOS, tmux splits on Linux/inside tmux).
-4. **Hub-and-spoke coordination** -- A lead agent orchestrates the effort. All agents share a board directory where they write outputs, read each other's work, and the lead synthesizes a final summary.
-5. **Cross-model teams** -- The LLM assigns different providers per agent: Claude Opus for planning, GPT Codex for coding, Gemini Pro for research -- all in one team.
+1. **Supervisor-led orchestration** -- Run `aemeathcli launch --task "..."` or `aemeathcli launch` and let the supervisor decompose the task.
+2. **Profile-driven delegation** -- The supervisor chooses specialized worker profiles such as `developer`, `reviewer`, `tester`, and `architect`.
+3. **Split-panel mode** -- Each worker can get its own terminal pane (tmux today; interactive chat still supports natural-language team creation flows).
+4. **Hub-and-spoke coordination** -- A lead agent orchestrates the effort. Workers execute bounded tasks and results are synthesized by the supervisor.
+5. **Cross-model teams** -- Different providers can be assigned per worker: Claude for planning, Codex for coding, Gemini for documentation and testing.
 
 ### Split-Panel Backends
 
 | Environment | Backend | How |
 |:------------|:--------|:----|
-| **macOS + iTerm2** | Native iTerm2 panes | AppleScript creates vertical/horizontal splits directly in your iTerm2 window |
-| **Inside tmux** | tmux splits | Auto-splits the current tmux window for each agent |
-| **Outside tmux (Linux)** | tmux session | Creates a new tmux session and attaches |
-| **No pane manager** | Single-pane fallback | Tab-based agent switching within the TUI |
+| **macOS / Linux with tmux** | tmux panes | Creates or reuses a tmux session for each worker pane |
+| **No tmux available** | Single-pane mode | Orchestrator still runs without the visual overlay |
 
 ### Hub-and-Spoke Coordination
 
@@ -344,9 +348,11 @@ Each agent runs a different model selected by the LLM based on role suitability:
 
 | Action | How |
 |:-------|:----|
-| Create team | Natural language in chat: "Create a team to build X" |
-| View agents | Each agent has its own pane -- click or switch panes |
-| Stop team | `/team stop` in the leader pane |
+| Launch orchestrator | `aemeathcli launch` |
+| Run one task | `aemeathcli launch --task "Build X"` |
+| View sessions | `aemeathcli info --sessions` |
+| View workers | `aemeathcli info --workers` |
+| Stop a session | `aemeathcli shutdown --session <id>` |
 
 <br />
 
@@ -373,7 +379,7 @@ Create a `SKILL.md` file with YAML frontmatter:
 ---
 name: my-skill
 description: Custom skill for my workflow
-version: 1.0.0
+version: 1.0.10
 triggers:
   - $my-skill
   - my-skill

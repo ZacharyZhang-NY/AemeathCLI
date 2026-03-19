@@ -38,6 +38,8 @@ const NEWLINE = 0x0a;
 // ── PaneProcess ─────────────────────────────────────────────────────────
 
 export class PaneProcess {
+  private static readonly resolvedPromise = Promise.resolve();
+
   private readonly agentId: string;
   private readonly agentName: string;
   private readonly socketPath: string;
@@ -121,14 +123,17 @@ export class PaneProcess {
   isConnected(): boolean { return this.connected && !this.disposed; }
 
   /** Gracefully disconnect from the hub. */
-  async disconnect(): Promise<void> {
-    if (this.disposed) return;
+  disconnect(): Promise<void> {
+    if (this.disposed) {
+      return PaneProcess.resolvedPromise;
+    }
     this.disposed = true;
     this.stopHeartbeat();
     this.rejectAll();
     if (this.socket) { this.socket.end(); this.socket = undefined; }
     this.connected = false;
     logger.info({ agentId: this.agentId }, "PaneProcess disconnected");
+    return PaneProcess.resolvedPromise;
   }
 
   // ── Connection ────────────────────────────────────────────────────
@@ -167,7 +172,7 @@ export class PaneProcess {
         this.connected = false;
         if (!this.disposed) {
           logger.warn({ agentId: this.agentId }, "Connection lost, reconnecting");
-          this.attemptReconnect();
+          void this.attemptReconnect();
         }
       });
 
@@ -234,7 +239,7 @@ export class PaneProcess {
         this.notify("agent.streamChunk", { content: "", model: "heartbeat", heartbeat: true });
       }
     }, this.heartbeatMs);
-    if (this.heartbeatTimer.unref) this.heartbeatTimer.unref();
+    this.heartbeatTimer.unref();
   }
 
   private stopHeartbeat(): void {

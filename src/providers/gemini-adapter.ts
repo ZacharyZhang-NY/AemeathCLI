@@ -73,10 +73,43 @@ function convertTools(
 function buildMessages(
   messages: readonly IChatMessage[],
 ): CoreMessage[] {
-  return messages.map((msg) => ({
-    role: msg.role as "user" | "assistant" | "system" | "tool",
-    content: msg.content,
-  })) as CoreMessage[];
+  return messages.map((msg) => {
+    if (msg.role === "assistant" && msg.toolCalls !== undefined && msg.toolCalls.length > 0) {
+      const parts: Array<Record<string, unknown>> = [];
+      if (msg.content.length > 0) {
+        parts.push({ type: "text", text: msg.content });
+      }
+      for (const toolCall of msg.toolCalls) {
+        parts.push({
+          type: "tool-call",
+          toolCallId: toolCall.id,
+          toolName: toolCall.name,
+          args: toolCall.arguments,
+        });
+      }
+      return { role: "assistant" as const, content: parts };
+    }
+
+    if (msg.role === "tool") {
+      const toolCall = msg.toolCalls?.[0];
+      if (toolCall !== undefined) {
+        return {
+          role: "tool" as const,
+          content: [{
+            type: "tool-result" as const,
+            toolCallId: toolCall.id,
+            toolName: toolCall.name,
+            result: msg.content,
+          }],
+        };
+      }
+    }
+
+    return {
+      role: msg.role as "user" | "assistant" | "system" | "tool",
+      content: msg.content,
+    };
+  }) as CoreMessage[];
 }
 
 function computeCost(modelInfo: IModelInfo, inputTokens: number, outputTokens: number): number {
@@ -106,6 +139,7 @@ function classifyError(error: unknown, model: string): never {
 export class GeminiAdapter implements IModelProvider {
   readonly name = PROVIDER_NAME;
   readonly supportedModels = GEMINI_MODELS;
+  readonly supportsToolCalling = true;
   private readonly google: ReturnType<typeof createGoogleGenerativeAI>;
 
   constructor(options?: IProviderOptions) {
@@ -130,8 +164,8 @@ export class GeminiAdapter implements IModelProvider {
         ...(request.temperature !== undefined ? { temperature: request.temperature } : {}),
       });
       const toolCalls = extractToolCalls(result);
-      const inputTokens = result.usage?.promptTokens ?? 0;
-      const outputTokens = result.usage?.completionTokens ?? 0;
+      const inputTokens = result.usage.promptTokens;
+      const outputTokens = result.usage.completionTokens;
       const usage: ITokenUsage = {
         inputTokens,
         outputTokens,
@@ -139,7 +173,7 @@ export class GeminiAdapter implements IModelProvider {
         costUsd: computeCost(modelInfo, inputTokens, outputTokens),
       };
       const responseMessage: IChatMessage = {
-        id: result.response?.id ?? crypto.randomUUID(),
+        id: result.response.id,
         role: "assistant",
         content: result.text,
         model: request.model,
@@ -149,7 +183,7 @@ export class GeminiAdapter implements IModelProvider {
         createdAt: new Date(),
       };
       return {
-        id: result.response?.id ?? crypto.randomUUID(),
+        id: result.response.id,
         model: request.model,
         provider: PROVIDER_NAME,
         message: responseMessage,
@@ -185,8 +219,8 @@ export class GeminiAdapter implements IModelProvider {
           };
           yield { type: "tool_call", toolCall };
         } else if (part.type === "finish") {
-          const inTok = part.usage?.promptTokens ?? 0;
-          const outTok = part.usage?.completionTokens ?? 0;
+          const inTok = part.usage.promptTokens;
+          const outTok = part.usage.completionTokens;
           yield {
             type: "usage",
             usage: {
@@ -210,8 +244,8 @@ export class GeminiAdapter implements IModelProvider {
     }
   }
 
-  async countTokens(text: string, _model: string): Promise<number> {
-    return Math.ceil(text.length / CHARS_PER_TOKEN_ESTIMATE);
+  countTokens(text: string, _model: string): Promise<number> {
+    return Promise.resolve(Math.ceil(text.length / CHARS_PER_TOKEN_ESTIMATE));
   }
 
   getModelInfo(model: string): IModelInfo {

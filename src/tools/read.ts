@@ -8,7 +8,7 @@ import { extname } from "node:path";
 import type { IToolRegistration, PermissionMode } from "../types/tool.js";
 import type { IToolResult } from "../types/message.js";
 import { FileNotFoundError } from "../types/errors.js";
-import { validatePath } from "../utils/sanitizer.js";
+import { isPathAllowed, validatePath } from "../utils/sanitizer.js";
 import { logger } from "../utils/logger.js";
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
@@ -65,9 +65,14 @@ function formatWithLineNumbers(
 }
 
 let projectRoot = process.cwd();
+let allowedPaths: readonly string[] = [projectRoot];
 
 export function setReadProjectRoot(root: string): void {
   projectRoot = root;
+}
+
+export function setReadAllowedPaths(paths: readonly string[]): void {
+  allowedPaths = paths;
 }
 
 export function createReadTool(): IToolRegistration {
@@ -120,6 +125,15 @@ export function createReadTool(): IToolRegistration {
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : "Path validation failed";
         return { toolCallId: "", name: "read", content: msg, isError: true };
+      }
+
+      if (!isPathAllowed(resolvedPath, allowedPaths, projectRoot)) {
+        return {
+          toolCallId: "",
+          name: "read",
+          content: `Access denied: ${resolvedPath} is outside the configured allowed paths.`,
+          isError: true,
+        };
       }
 
       let fileStat;

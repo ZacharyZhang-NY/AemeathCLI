@@ -8,7 +8,12 @@ import { readdir, stat } from "node:fs/promises";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { logger } from "../utils/logger.js";
-import { getUserSkillsDir, getProjectSkillsDir } from "../utils/pathResolver.js";
+import {
+  getUserSkillsDir,
+  getProjectSkillsDir,
+  getUniversalUserSkillsDir,
+  getUniversalProjectSkillsDir,
+} from "../utils/pathResolver.js";
 import { SkillLoader } from "./loader.js";
 import type { ISkillDefinition } from "../types/config.js";
 
@@ -18,7 +23,7 @@ const SKILL_FILENAME = "SKILL.md";
 
 // ── Types ───────────────────────────────────────────────────────────────
 
-export type SkillSource = "project" | "user" | "built-in";
+export type SkillSource = "project" | "user" | "universal" | "built-in";
 
 export interface ISkillSummary {
   readonly name: string;
@@ -56,11 +61,21 @@ export class SkillRegistry {
     const builtInDir = this.getBuiltInSkillsDir();
     await this.scanDirectory(builtInDir, "built-in");
 
-    // 2. User-level skills
+    // 2. Universal user-level skills (~/.agents/skills/)
+    const universalUserDir = getUniversalUserSkillsDir();
+    await this.scanDirectory(universalUserDir, "universal");
+
+    // 3. User-level skills (~/.aemeathcli/skills/)
     const userDir = getUserSkillsDir();
     await this.scanDirectory(userDir, "user");
 
-    // 3. Project-level skills (highest priority)
+    // 4. Universal project-level skills (<project>/.agents/skills/)
+    if (projectRoot) {
+      const universalProjectDir = getUniversalProjectSkillsDir(projectRoot);
+      await this.scanDirectory(universalProjectDir, "universal");
+    }
+
+    // 5. Project-level skills (highest priority — <project>/.aemeathcli/skills/)
     if (projectRoot) {
       const projectDir = getProjectSkillsDir(projectRoot);
       await this.scanDirectory(projectDir, "project");

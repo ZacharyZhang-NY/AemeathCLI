@@ -7,7 +7,7 @@ import { logger } from "../utils/logger.js";
 import { ModelNotFoundError } from "../types/errors.js";
 import { SUPPORTED_MODELS } from "../types/model.js";
 import type { IModelInfo } from "../types/model.js";
-import type { IModelProvider } from "./types.js";
+import type { IModelProvider, IProviderRegistryOptions } from "./types.js";
 
 /**
  * Singleton registry that maps provider names and model IDs to provider adapters.
@@ -151,7 +151,9 @@ export class ProviderRegistry {
  * Create a pre-populated registry with all available providers.
  * Resolves credentials via SessionManager (CLI delegation, API keys, env vars).
  */
-export async function createDefaultRegistry(): Promise<ProviderRegistry> {
+export async function createDefaultRegistry(
+  options: IProviderRegistryOptions = {},
+): Promise<ProviderRegistry> {
   const registry = new ProviderRegistry();
 
   const { SessionManager } = await import("../auth/session-manager.js");
@@ -162,7 +164,7 @@ export async function createDefaultRegistry(): Promise<ProviderRegistry> {
   // SDK-based adapters over native CLI adapters.  Native CLI adapters shell
   // out to external binaries whose raw JSON output can interfere with IPC
   // streaming.  Falls back to native only when no API key is available.
-  const preferSdk = process.env["AEMEATHCLI_PREFER_SDK"] === "1";
+  const preferSdk = options.preferSdk ?? process.env["AEMEATHCLI_PREFER_SDK"] === "1";
 
   const cliAvailability = new Map<string, boolean>();
   const hasCli = async (command: string): Promise<boolean> => {
@@ -171,8 +173,10 @@ export async function createDefaultRegistry(): Promise<ProviderRegistry> {
       return cached;
     }
 
+    const pathLookupCommand = process.platform === "win32" ? "where" : "which";
+
     try {
-      await execa("which", [command], { timeout: 3000 });
+      await execa(pathLookupCommand, [command], { timeout: 3000 });
       cliAvailability.set(command, true);
       return true;
     } catch {
@@ -187,6 +191,17 @@ export async function createDefaultRegistry(): Promise<ProviderRegistry> {
     cliCommand: string,
     envKeyName: string,
   ): Promise<boolean> => {
+    const hasApiKey =
+      credential?.method === "api_key"
+      || credential?.method === "env_variable"
+      || process.env[envKeyName] !== undefined;
+
+    // When preferSdk is set, prefer SDK adapters whenever an API key or
+    // environment credential is available, even if a native CLI login exists.
+    if (preferSdk && hasApiKey) {
+      return false;
+    }
+
     // Native login credentials (OAuth sessions) must always use the native CLI
     // adapter. The stored token is an OAuth session token, NOT an API key — SDK
     // adapters will reject it with "invalid x-api-key" / "API key not valid".
@@ -196,12 +211,6 @@ export async function createDefaultRegistry(): Promise<ProviderRegistry> {
 
     // When preferSdk is set, only use native if SDK has no way to authenticate.
     if (preferSdk) {
-      const hasApiKey =
-        credential?.token !== undefined ||
-        process.env[envKeyName] !== undefined;
-      if (hasApiKey) {
-        return false;
-      }
       // No API key available — fall back to native if CLI exists.
       return await hasCli(cliCommand);
     }

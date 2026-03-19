@@ -4,7 +4,7 @@
  */
 
 import { homedir } from "node:os";
-import { join, resolve, dirname } from "node:path";
+import { join, dirname } from "node:path";
 import { existsSync, mkdirSync } from "node:fs";
 
 // ── XDG-inspired directory layout ────────────────────────────────────────
@@ -47,6 +47,11 @@ export function getUserSkillsDir(): string {
   return join(getAemeathHome(), "skills");
 }
 
+/** Universal user-level skills directory: ~/.agents/skills/ */
+export function getUniversalUserSkillsDir(): string {
+  return join(homedir(), ".agents", "skills");
+}
+
 export function getTeamsDir(): string {
   return join(getAemeathHome(), "teams");
 }
@@ -67,6 +72,11 @@ export function getProjectConfigPath(projectRoot: string): string {
 
 export function getProjectSkillsDir(projectRoot: string): string {
   return join(getProjectConfigDir(projectRoot), "skills");
+}
+
+/** Universal project-level skills directory: <projectRoot>/.agents/skills/ */
+export function getUniversalProjectSkillsDir(projectRoot: string): string {
+  return join(projectRoot, ".agents", "skills");
 }
 
 export function getProjectMCPConfigPath(projectRoot: string): string {

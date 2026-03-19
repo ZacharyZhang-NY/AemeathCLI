@@ -6,6 +6,7 @@
 
 import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from "node:crypto";
 import { readFileSync, writeFileSync, existsSync, chmodSync } from "node:fs";
+import type * as Keytar from "keytar";
 import type { ProviderName, ICredential } from "../types/index.js";
 import { getCredentialsPath, ensureSecureDirectory, getAemeathHome } from "../utils/index.js";
 import { logger } from "../utils/index.js";
@@ -37,7 +38,7 @@ export class CredentialStore {
         await keytar.setPassword(service, provider, data);
         logger.info({ provider }, "Credential stored in OS keychain");
         return;
-      } catch (error: unknown) {
+      } catch {
         logger.warn({ provider }, "OS keychain store failed, using encrypted fallback");
       }
     }
@@ -159,8 +160,8 @@ export class CredentialStore {
     try {
       const content = this.decryptFile(credPath);
       const store = JSON.parse(content) as Record<string, string>;
-      delete store[provider];
-      this.encryptFile(credPath, JSON.stringify(store));
+      const { [provider]: _deletedCredential, ...remainingStore } = store;
+      this.encryptFile(credPath, JSON.stringify(remainingStore));
     } catch {
       // Ignore
     }
@@ -226,7 +227,7 @@ export class CredentialStore {
     return this.keytarAvailable;
   }
 
-  private async getKeytar(): Promise<typeof import("keytar")> {
+  private async getKeytar(): Promise<typeof Keytar> {
     return import("keytar");
   }
 }

@@ -14,14 +14,17 @@ import { createReviewCommand } from "./commands/review.js";
 import { createTestCommand } from "./commands/test.js";
 import { createConfigCommand } from "./commands/config.js";
 import { createAuthCommand, createLoginCommand } from "./commands/auth.js";
-import { initializeDirectories } from "../utils/index.js";
-import { logger } from "../utils/index.js";
+import { createLaunchCommand } from "./commands/launch.js";
+import { createShutdownCommand } from "./commands/shutdown.js";
+import { createInfoCommand } from "./commands/info.js";
+import { createInstallCommand } from "./commands/install.js";
+import { createTeamCommand } from "./commands/team.js";
+import { runChatCommand } from "./chat-runner.js";
 import type { IIPCMessage } from "../types/index.js";
 import type { ProviderRegistry } from "../providers/registry.js";
 import type { ToolRegistry } from "../tools/registry.js";
 import type { IChatMessage, IToolCall } from "../types/message.js";
-
-const VERSION = "1.0.0";
+import { PACKAGE_VERSION } from "../version.js";
 
 function getFlagValue(args: readonly string[], flag: string): string | undefined {
   const index = args.indexOf(flag);
@@ -68,7 +71,7 @@ async function maybeRunAgentMode(args: readonly string[]): Promise<boolean> {
   function getRegistry(): Promise<ProviderRegistry> {
     if (!registryPromise) {
       registryPromise = import("../providers/registry.js").then(
-        ({ createDefaultRegistry }) => createDefaultRegistry(),
+        ({ createDefaultRegistry }) => createDefaultRegistry({ preferSdk: true }),
       );
     }
     return registryPromise;
@@ -320,25 +323,44 @@ async function maybeRunAgentMode(args: readonly string[]): Promise<boolean> {
 }
 
 async function main(): Promise<void> {
-  if (await maybeRunAgentMode(process.argv.slice(2))) {
-    return;
+  const rawArgs = [...process.argv.slice(2)];
+
+  if (process.argv.includes("--no-color")) {
+    process.env["NO_COLOR"] = "1";
   }
 
-  // Initialize directories on startup
-  initializeDirectories();
+  if (process.argv.includes("--verbose")) {
+    process.env["AEMEATHCLI_LOG_LEVEL"] = process.env["AEMEATHCLI_LOG_LEVEL"] ?? "debug";
+  }
+
+  if (await maybeRunAgentMode(rawArgs)) {
+    return;
+  }
 
   const program = new Command()
     .name("aemeathcli")
     .description(
-      "Next-generation multi-model CLI coding tool with agent teams and split-panel coordination",
+      "Multi-model coding CLI with chat, orchestration, and provider-aware automation workflows",
     )
-    .version(VERSION, "-v, --version")
+    .version(PACKAGE_VERSION, "-v, --version")
+    .argument("[message...]", "Initial prompt to send")
     .option("-m, --model <model>", "Override model for this session")
     .option("-r, --role <role>", "Set the task role")
     .option("--verbose", "Enable verbose output")
     .option("--no-color", "Disable colored output")
-    .option("--permission-mode <mode>", "Permission mode (strict, standard, permissive)")
-    .option("--project-root <path>", "Override project root detection");
+    .showSuggestionAfterError()
+    .showHelpAfterError()
+    .addHelpText(
+      "after",
+      [
+        "",
+        "Examples:",
+        "  aemeathcli",
+        "  aemeathcli \"explain this repository\"",
+        "  aemeathcli chat --print \"summarize the latest diff\"",
+        "  aemeathcli launch --task \"fix the failing tests\"",
+      ].join("\n"),
+    );
 
   // Register subcommands
   program.addCommand(createChatCommand());
@@ -348,12 +370,17 @@ async function main(): Promise<void> {
   program.addCommand(createConfigCommand());
   program.addCommand(createAuthCommand());
   program.addCommand(createLoginCommand());
+  program.addCommand(createTeamCommand());
 
-  // Default action (no subcommand) — start interactive chat
-  program.action(async (options: Record<string, unknown>, command: Command) => {
-    // If extra arguments provided, treat as chat message
-    const args = command.args;
-    let message = args.length > 0 ? args.join(" ") : undefined;
+  // Orchestrator commands
+  program.addCommand(createLaunchCommand());
+  program.addCommand(createShutdownCommand());
+  program.addCommand(createInfoCommand());
+  program.addCommand(createInstallCommand());
+
+  // Default action (no subcommand)
+  program.action(async (messageParts: string[], options: Record<string, unknown>) => {
+    let message = messageParts.join(" ") || undefined;
 
     // Support reading initial prompt from file (used by split-panel mode
     // where each agent pane is launched with AEMEATHCLI_PROMPT_FILE pointing
@@ -372,33 +399,37 @@ async function main(): Promise<void> {
       }
     }
 
-    const { startChatSession } = await import("../ui/App.js");
-
-    const model = options["model"] as string | undefined;
-    const role = options["role"] as string | undefined;
-
-    await startChatSession({
-      ...(message !== undefined ? { initialMessage: message } : {}),
-      ...(model !== undefined ? { model } : {}),
-      ...(role !== undefined ? { role } : {}),
-      ...(isAgentPane ? { isAgentPane: true } : {}),
+    await runChatCommand({
+      initialMessage: message,
+      model: options["model"] as string | undefined,
+      role: options["role"] as string | undefined,
+      isAgentPane,
       streaming: true,
     });
   });
 
   // Check for updates (non-blocking, per PRD section 19.3)
-  checkForUpdates();
+  if (shouldCheckForUpdates(process.argv.slice(2))) {
+    checkForUpdates();
+  }
 
   // Parse and execute
   try {
     await program.parseAsync(process.argv);
   } catch (error: unknown) {
     if (error instanceof Error) {
-      logger.error({ error: error.message }, "CLI error");
       process.stderr.write(pc.red(`Error: ${error.message}\n`));
     }
     process.exitCode = 1;
   }
+}
+
+function shouldCheckForUpdates(args: readonly string[]): boolean {
+  if (!process.stdin.isTTY || !process.stdout.isTTY) {
+    return false;
+  }
+
+  return !args.some((arg) => ["--help", "-h", "--version", "-v"].includes(arg));
 }
 
 function checkForUpdates(): void {
@@ -406,7 +437,7 @@ function checkForUpdates(): void {
   import("update-notifier")
     .then(({ default: updateNotifier }) => {
       const notifier = updateNotifier({
-        pkg: { name: "aemeathcli", version: VERSION },
+        pkg: { name: "aemeathcli", version: PACKAGE_VERSION },
         updateCheckInterval: 1000 * 60 * 60 * 24, // 24 hours
       });
       notifier.notify({ isGlobal: true });

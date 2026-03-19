@@ -10,6 +10,7 @@ import {
   ModelNotFoundError,
 } from "../types/errors.js";
 import { SUPPORTED_MODELS } from "../types/model.js";
+import { getModelInfo as getDynamicModelInfo } from "./model-discovery.js";
 import { logger } from "../utils/logger.js";
 import type { IModelInfo, ProviderName } from "../types/model.js";
 import type {
@@ -81,6 +82,8 @@ function toJsonLines(output: string): unknown[] {
 }
 
 function buildPrompt(request: IChatRequest): string {
+  // Extract only the user message text — system prompt is passed separately
+  // via the provider's native --system-prompt flag.
   const latestUser = [...request.messages]
     .reverse()
     .find((message) => message.role === "user");
@@ -88,11 +91,7 @@ function buildPrompt(request: IChatRequest): string {
     ? request.messages[request.messages.length - 1]
     : undefined;
 
-  const latestPrompt = latestUser?.content ?? fallbackLast?.content ?? "";
-  if (request.system !== undefined && request.system.length > 0) {
-    return `${request.system}\n\n${latestPrompt}`.trim();
-  }
-  return latestPrompt;
+  return latestUser?.content ?? fallbackLast?.content ?? "";
 }
 
 function computeCost(modelInfo: IModelInfo, inputTokens: number, outputTokens: number): number {
@@ -124,15 +123,16 @@ function classifyCliError(provider: ProviderName, error: unknown): Error {
 abstract class BaseNativeCLIAdapter implements IModelProvider {
   abstract readonly name: ProviderName;
   abstract readonly supportedModels: readonly string[];
+  readonly supportsToolCalling = false;
 
-  protected abstract runCLI(model: string, prompt: string): Promise<ICLIResult>;
+  protected abstract runCLI(model: string, prompt: string, systemPrompt?: string): Promise<ICLIResult>;
 
   async chat(request: IChatRequest): Promise<IChatResponse> {
     const modelInfo = this.getModelInfo(request.model);
     const prompt = buildPrompt(request);
 
     try {
-      const result = await this.runCLI(request.model, prompt);
+      const result = await this.runCLI(request.model, prompt, request.system);
 
       const inputTokens = result.inputTokens ?? Math.ceil(prompt.length / CHARS_PER_TOKEN_ESTIMATE);
       const outputTokens = result.outputTokens ?? Math.ceil(result.text.length / CHARS_PER_TOKEN_ESTIMATE);
@@ -185,20 +185,21 @@ abstract class BaseNativeCLIAdapter implements IModelProvider {
     }
   }
 
-  async countTokens(text: string, _model: string): Promise<number> {
-    return Math.ceil(text.length / CHARS_PER_TOKEN_ESTIMATE);
+  countTokens(text: string, _model: string): Promise<number> {
+    return Promise.resolve(Math.ceil(text.length / CHARS_PER_TOKEN_ESTIMATE));
   }
 
   getModelInfo(model: string): IModelInfo {
-    const info = SUPPORTED_MODELS[model];
+    // Check hardcoded registry first, then dynamic discovery
+    const info = SUPPORTED_MODELS[model] ?? getDynamicModelInfo(model);
     if (info === undefined || info.provider !== this.name) {
       throw new ModelNotFoundError(model);
     }
     return info;
   }
 
-  async listAvailableModels(): Promise<readonly string[]> {
-    return [...this.supportedModels];
+  listAvailableModels(): Promise<readonly string[]> {
+    return Promise.resolve([...this.supportedModels]);
   }
 }
 
@@ -212,10 +213,33 @@ export class ClaudeNativeCLIAdapter extends BaseNativeCLIAdapter {
     "claude-haiku-4-5",
   ] as const;
 
-  protected async runCLI(model: string, prompt: string): Promise<ICLIResult> {
+  /** Map internal model IDs to valid Claude CLI model IDs. */
+  private toCLIModelId(model: string): string {
+    // The Claude CLI doesn't recognize the "-1m" context suffix.
+    // Strip it — the API handles context window sizing automatically.
+    return model.replace(/-1m$/, "");
+  }
+
+  protected async runCLI(model: string, prompt: string, systemPrompt?: string): Promise<ICLIResult> {
+    const cliModel = this.toCLIModelId(model);
+    const args = [
+      "-p",
+      "--output-format", "json",
+      "--model", cliModel,
+      // Skip project CLAUDE.md to avoid loading huge project instructions
+      // that make Claude think it's Claude Code doing a codebase audit
+      "--setting-sources", "user",
+    ];
+
+    if (systemPrompt && systemPrompt.length > 0) {
+      args.push("--system-prompt", systemPrompt);
+    }
+
+    args.push(prompt);
+
     const { stdout } = await execa(
       "claude",
-      ["-p", "--output-format", "json", "--model", model, prompt],
+      args,
       {
         timeout: CLI_TIMEOUT_MS,
         stdin: "ignore",
@@ -255,10 +279,12 @@ export class CodexNativeCLIAdapter extends BaseNativeCLIAdapter {
     "gpt-5.1-codex-mini",
   ] as const;
 
-  protected async runCLI(model: string, prompt: string): Promise<ICLIResult> {
+  protected async runCLI(model: string, prompt: string, systemPrompt?: string): Promise<ICLIResult> {
     // Allow agent panes to set a writable sandbox so codex can write to the
     // shared board directory.  Default to "read-only" for normal usage.
     const sandbox = process.env["AEMEATHCLI_CODEX_SANDBOX"] ?? "read-only";
+    // Prepend system prompt for Codex (no native --system-prompt flag)
+    const fullPrompt = systemPrompt ? `${systemPrompt}\n\n${prompt}` : prompt;
     const { stdout } = await execa(
       "codex",
       [
@@ -268,7 +294,7 @@ export class CodexNativeCLIAdapter extends BaseNativeCLIAdapter {
         "--json",
         "--model",
         model,
-        prompt,
+        fullPrompt,
       ],
       {
         timeout: CLI_TIMEOUT_MS,
@@ -324,12 +350,14 @@ export class GeminiNativeCLIAdapter extends BaseNativeCLIAdapter {
     "gemini-2.5-flash-lite",
   ] as const;
 
-  protected async runCLI(model: string, prompt: string): Promise<ICLIResult> {
+  protected async runCLI(model: string, prompt: string, systemPrompt?: string): Promise<ICLIResult> {
+    // Prepend system prompt for Gemini (no native --system-prompt flag)
+    const fullPrompt = systemPrompt ? `${systemPrompt}\n\n${prompt}` : prompt;
     const { stdout } = await execa(
       "gemini",
       [
         "-p",
-        prompt,
+        fullPrompt,
         "--model",
         model,
         "--output-format",
@@ -383,10 +411,11 @@ export class KimiNativeCLIAdapter extends BaseNativeCLIAdapter {
   readonly name: ProviderName = "kimi";
   readonly supportedModels = ["kimi-for-coding"] as const;
 
-  protected async runCLI(_model: string, prompt: string): Promise<ICLIResult> {
+  protected async runCLI(_model: string, prompt: string, systemPrompt?: string): Promise<ICLIResult> {
+    const fullPrompt = systemPrompt ? `${systemPrompt}\n\n${prompt}` : prompt;
     const { stdout } = await execa(
       "kimi",
-      ["--print", "--output-format", "stream-json", "-p", prompt],
+      ["--print", "--output-format", "stream-json", "-p", fullPrompt],
       {
         timeout: CLI_TIMEOUT_MS,
         stdin: "ignore",

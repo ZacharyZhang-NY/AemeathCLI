@@ -44,9 +44,12 @@ function isPrivateHostname(hostname: string): boolean {
   }
   const ipMatch = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(hostname);
   if (ipMatch) {
-    const [, a, b] = ipMatch as unknown as [string, string, string, string, string];
-    const first = parseInt(a!, 10);
-    const second = parseInt(b!, 10);
+    const [, a, b] = ipMatch;
+    if (a === undefined || b === undefined) {
+      return false;
+    }
+    const first = parseInt(a, 10);
+    const second = parseInt(b, 10);
     if (first === 127) return true;
     if (first === 10) return true;
     if (first === 172 && second >= 16 && second <= 31) return true;
@@ -116,9 +119,7 @@ export function createWebFetchTool(): IToolRegistration {
       ],
     },
     category: "web",
-    requiresApproval: (_mode: PermissionMode, _args: Record<string, unknown>): boolean => {
-      return false;
-    },
+    requiresApproval: (_mode: PermissionMode, _args: Record<string, unknown>): boolean => false,
     execute: async (args: Record<string, unknown>): Promise<IToolResult> => {
       const rawUrl = args["url"];
       if (typeof rawUrl !== "string" || rawUrl.length === 0) {
@@ -148,7 +149,9 @@ export function createWebFetchTool(): IToolRegistration {
       logger.debug({ url, timeout: timeoutMs }, "Fetching URL");
 
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+      const timeoutId = setTimeout(() => {
+        controller.abort();
+      }, timeoutMs);
 
       try {
         const response = await fetch(url, {

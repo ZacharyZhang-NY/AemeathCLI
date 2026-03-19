@@ -3,7 +3,7 @@
  * Uses a universal approximation since we don't bundle tokenizers for each provider.
  */
 
-import type { ProviderName, ITokenUsage, IModelInfo } from "../types/index.js";
+import type { ITokenUsage } from "../types/index.js";
 import { SUPPORTED_MODELS } from "../types/index.js";
 
 /**

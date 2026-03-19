@@ -7,7 +7,7 @@ import { writeFile, mkdir, stat } from "node:fs/promises";
 import { dirname, extname } from "node:path";
 import type { IToolRegistration, PermissionMode } from "../types/tool.js";
 import type { IToolResult } from "../types/message.js";
-import { validatePath } from "../utils/sanitizer.js";
+import { isPathAllowed, validatePath } from "../utils/sanitizer.js";
 import { logger } from "../utils/logger.js";
 
 const CONFIG_EXTENSIONS = new Set([
@@ -27,9 +27,14 @@ function isConfigFile(filePath: string): boolean {
 }
 
 let projectRoot = process.cwd();
+let allowedPaths: readonly string[] = [projectRoot];
 
 export function setWriteProjectRoot(root: string): void {
   projectRoot = root;
+}
+
+export function setWriteAllowedPaths(paths: readonly string[]): void {
+  allowedPaths = paths;
 }
 
 export function createWriteTool(): IToolRegistration {
@@ -86,6 +91,15 @@ export function createWriteTool(): IToolRegistration {
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : "Path validation failed";
         return { toolCallId: "", name: "write", content: msg, isError: true };
+      }
+
+      if (!isPathAllowed(resolvedPath, allowedPaths, projectRoot)) {
+        return {
+          toolCallId: "",
+          name: "write",
+          content: `Access denied: ${resolvedPath} is outside the configured allowed paths.`,
+          isError: true,
+        };
       }
 
       const parentDir = dirname(resolvedPath);

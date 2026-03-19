@@ -168,6 +168,7 @@ function classifyError(error: unknown, model: string): never {
 export class ClaudeAdapter implements IModelProvider {
   readonly name = PROVIDER_NAME;
   readonly supportedModels = CLAUDE_MODELS;
+  readonly supportsToolCalling = true;
 
   private readonly anthropic: ReturnType<typeof createAnthropic>;
 
@@ -195,8 +196,8 @@ export class ClaudeAdapter implements IModelProvider {
       });
 
       const toolCalls = extractToolCalls(result);
-      const inputTokens = result.usage?.promptTokens ?? 0;
-      const outputTokens = result.usage?.completionTokens ?? 0;
+      const inputTokens = result.usage.promptTokens;
+      const outputTokens = result.usage.completionTokens;
 
       const usage: ITokenUsage = {
         inputTokens,
@@ -206,7 +207,7 @@ export class ClaudeAdapter implements IModelProvider {
       };
 
       const responseMessage: IChatMessage = {
-        id: result.response?.id ?? crypto.randomUUID(),
+        id: result.response.id,
         role: "assistant",
         content: result.text,
         model: request.model,
@@ -217,7 +218,7 @@ export class ClaudeAdapter implements IModelProvider {
       };
 
       return {
-        id: result.response?.id ?? crypto.randomUUID(),
+        id: result.response.id,
         model: request.model,
         provider: PROVIDER_NAME,
         message: responseMessage,
@@ -255,8 +256,8 @@ export class ClaudeAdapter implements IModelProvider {
           };
           yield { type: "tool_call", toolCall };
         } else if (part.type === "finish") {
-          const inputTokens = part.usage?.promptTokens ?? 0;
-          const outputTokens = part.usage?.completionTokens ?? 0;
+          const inputTokens = part.usage.promptTokens;
+          const outputTokens = part.usage.completionTokens;
           const usage: ITokenUsage = {
             inputTokens,
             outputTokens,
@@ -279,8 +280,8 @@ export class ClaudeAdapter implements IModelProvider {
     }
   }
 
-  async countTokens(text: string, _model: string): Promise<number> {
-    return Math.ceil(text.length / CHARS_PER_TOKEN_ESTIMATE);
+  countTokens(text: string, _model: string): Promise<number> {
+    return Promise.resolve(Math.ceil(text.length / CHARS_PER_TOKEN_ESTIMATE));
   }
 
   getModelInfo(model: string): IModelInfo {

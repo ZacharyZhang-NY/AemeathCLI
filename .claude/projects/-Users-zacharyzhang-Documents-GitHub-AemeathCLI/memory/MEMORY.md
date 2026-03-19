@@ -1,0 +1,1 @@
+- [feedback_no_gradients.md](feedback_no_gradients.md) — Never use gradient colors in CLI UI; flat/solid colors only

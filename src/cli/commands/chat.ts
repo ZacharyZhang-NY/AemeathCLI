@@ -3,7 +3,7 @@
  */
 
 import { Command } from "commander";
-import type { IGlobalFlags } from "../flags.js";
+import { runChatCommand } from "../chat-runner.js";
 
 export function createChatCommand(): Command {
   const chat = new Command("chat")
@@ -12,24 +12,16 @@ export function createChatCommand(): Command {
     .option("-m, --model <model>", "Override model for this session")
     .option("-r, --role <role>", "Set the task role (planning, coding, review, testing, bugfix)")
     .option("--system <prompt>", "Custom system prompt")
+    .option("--print", "Print a single response and exit")
     .option("--no-stream", "Disable streaming output")
     .action(async (messageParts: string[], options: Record<string, unknown>) => {
-      const message = messageParts.join(" ");
-
-      // Lazy-load the TUI to keep startup fast
-      const { startChatSession } = await import("../../ui/App.js");
-
-      const model = options["model"] as string | undefined;
-      const role = options["role"] as string | undefined;
-      const systemPrompt = options["system"] as string | undefined;
-      const initialMessage = message || undefined;
-
-      await startChatSession({
-        ...(initialMessage !== undefined ? { initialMessage } : {}),
-        ...(model !== undefined ? { model } : {}),
-        ...(role !== undefined ? { role } : {}),
-        ...(systemPrompt !== undefined ? { systemPrompt } : {}),
+      await runChatCommand({
+        initialMessage: messageParts.join(" ") || undefined,
+        model: options["model"] as string | undefined,
+        role: options["role"] as string | undefined,
+        systemPrompt: options["system"] as string | undefined,
         streaming: options["stream"] !== false,
+        print: options["print"] === true,
       });
     });
 

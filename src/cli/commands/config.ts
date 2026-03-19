@@ -16,7 +16,7 @@ export function createConfigCommand(): Command {
       try {
         const { ConfigStore } = await import("../../storage/config-store.js");
         const store = new ConfigStore();
-        const cfg = await store.loadGlobal();
+        const cfg = store.loadGlobal();
 
         if (key) {
           const value = getNestedValue(cfg, key);
@@ -43,7 +43,7 @@ export function createConfigCommand(): Command {
       try {
         const { ConfigStore } = await import("../../storage/config-store.js");
         const store = new ConfigStore();
-        const cfg = await store.loadGlobal();
+        const cfg = store.loadGlobal();
 
         let parsedValue: unknown;
         try {
@@ -53,7 +53,7 @@ export function createConfigCommand(): Command {
         }
 
         setNestedValue(cfg as unknown as Record<string, unknown>, key, parsedValue);
-        await store.saveGlobal(cfg);
+        store.saveGlobal(cfg);
         process.stdout.write(pc.green(`Set ${key} = ${JSON.stringify(parsedValue)}\n`));
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
@@ -65,15 +65,28 @@ export function createConfigCommand(): Command {
   config
     .command("init")
     .description("Initialize configuration with interactive setup")
-    .action(async () => {
+    .option("--defaults", "Write default configuration without interactive prompts")
+    .option("--force", "Overwrite or recreate the global configuration")
+    .action(async (options: { defaults?: boolean; force?: boolean }) => {
       try {
-        const { runFirstRunSetup } = await import("../../ui/App.js");
-        await runFirstRunSetup();
+        const { runFirstRunSetup } = await import("../setup/first-run.js");
+        await runFirstRunSetup({
+          ...(options.defaults !== undefined ? { defaults: options.defaults } : {}),
+          ...(options.force !== undefined ? { force: options.force } : {}),
+        });
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
         process.stderr.write(pc.red(`Setup failed: ${message}\n`));
         process.exitCode = 3;
       }
+    });
+
+  config
+    .command("path")
+    .description("Show the active global configuration path")
+    .action(async () => {
+      const { getConfigPath } = await import("../../utils/pathResolver.js");
+      process.stdout.write(`${getConfigPath()}\n`);
     });
 
   return config;

@@ -19,7 +19,7 @@
     "node": ">=20.0.0"
   },
   "scripts": {
-    "build": "tsup",
+    "build": "tsup && node ./scripts/copy-agent-store.mjs",
     "dev": "tsup --watch",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src/",
@@ -29,8 +29,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "clean": "rm -rf dist",
-    "prepublishOnly": "npm run clean && npm run build"
+    "clean": "node ./scripts/clean.mjs",
+    "prepublishOnly": "npm run clean && npm run typecheck && npm run lint && npm run test && npm run build"
   },
   "keywords": [
     "cli",
@@ -57,17 +57,17 @@
     "fast-glob": "^3.3.0",
     "ink": "^5.0.0",
     "ink-spinner": "^5.0.0",
+    "node-pty": "^1.1.0",
     "open": "^10.0.0",
     "picocolors": "^1.1.0",
     "pino": "^9.0.0",
     "react": "^18.3.0",
     "update-notifier": "^7.0.0",
     "yaml": "^2.4.0",
-    "zod": "^3.23.0"
+    "zod": "^3.23.0",
+    "better-sqlite3": "^11.0.0"
   },
   "devDependencies": {
-    "better-sqlite3": "^11.0.0",
-    "keytar": "^7.9.0",
     "@testing-library/react": "^15.0.0",
     "@types/better-sqlite3": "^7.6.0",
     "@types/node": "^22.0.0",
@@ -80,6 +80,9 @@
     "typescript": "^5.7.0",
     "typescript-eslint": "^8.0.0",
     "vitest": "^3.0.0"
+  },
+  "optionalDependencies": {
+    "keytar": "^7.9.0"
   },
   "files": [
     "dist",

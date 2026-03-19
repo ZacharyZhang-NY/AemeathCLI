@@ -3,7 +3,6 @@
  */
 
 import type { ModelRole, ProviderName } from "./model.js";
-import type { AgentMessageType } from "./message.js";
 
 // ── Task Status (PRD section 8.5) ────────────────────────────────────────
 
@@ -76,7 +75,7 @@ export interface IIPCMessage {
 
 export interface IIPCResponse {
   readonly jsonrpc: "2.0";
-  readonly result?: unknown | undefined;
+  readonly result?: unknown;
   readonly error?: {
     readonly code: number;
     readonly message: string;

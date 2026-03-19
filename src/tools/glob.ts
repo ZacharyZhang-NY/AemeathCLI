@@ -9,7 +9,7 @@ import { resolve } from "node:path";
 import type { IToolRegistration, PermissionMode } from "../types/tool.js";
 import type { IToolResult } from "../types/message.js";
 import { logger } from "../utils/logger.js";
-import { validatePath } from "../utils/sanitizer.js";
+import { isPathAllowed, validatePath } from "../utils/sanitizer.js";
 
 const MAX_RESULTS = 1000;
 
@@ -19,9 +19,14 @@ interface FileEntry {
 }
 
 let projectRoot = process.cwd();
+let allowedPaths: readonly string[] = [projectRoot];
 
 export function setGlobProjectRoot(root: string): void {
   projectRoot = root;
+}
+
+export function setGlobAllowedPaths(paths: readonly string[]): void {
+  allowedPaths = paths;
 }
 
 export function createGlobTool(): IToolRegistration {
@@ -66,6 +71,15 @@ export function createGlobTool(): IToolRegistration {
         searchPath = validatePath(resolved, projectRoot);
       } else {
         searchPath = projectRoot;
+      }
+
+      if (!isPathAllowed(searchPath, allowedPaths, projectRoot)) {
+        return {
+          toolCallId: "",
+          name: "glob",
+          content: `Access denied: ${searchPath} is outside the configured allowed paths.`,
+          isError: true,
+        };
       }
 
       let matchedPaths: string[];

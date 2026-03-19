@@ -172,7 +172,7 @@ export class SkillExecutor {
     }
 
     const minContext = requirements["min-context"];
-    if (minContext !== undefined && minContext !== null) {
+    if (minContext !== undefined) {
       if (capabilities.contextWindow < minContext) {
         warnings.push(
           `Skill "${definition.frontmatter.name}" requires ${minContext} context tokens, ` +

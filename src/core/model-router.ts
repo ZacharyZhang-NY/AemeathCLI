@@ -6,15 +6,13 @@
 import type {
   ModelRole,
   IModelResolution,
-  ModelResolutionSource,
   IRoleConfig,
   IGlobalConfig,
   ProviderName,
   IModelInfo,
 } from "../types/index.js";
-import { SUPPORTED_MODELS, DEFAULT_MODEL_ID, ModelNotFoundError } from "../types/index.js";
+import { SUPPORTED_MODELS, ModelNotFoundError } from "../types/index.js";
 import { logger } from "../utils/index.js";
-import { getEventBus } from "./event-bus.js";
 
 export interface IModelRouterConfig {
   readonly defaultModel: string;
@@ -170,7 +168,7 @@ export class ModelRouter {
  */
 export function createModelRouter(config: IGlobalConfig): ModelRouter {
   const enabledProviders = Object.entries(config.providers)
-    .filter(([, providerConfig]) => providerConfig?.enabled)
+    .filter(([, providerConfig]) => providerConfig.enabled)
     .map(([name]) => name as ProviderName);
 
   return new ModelRouter({

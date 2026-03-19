@@ -7,7 +7,7 @@ import { execaCommand } from "execa";
 import type { IToolRegistration, PermissionMode } from "../types/tool.js";
 import type { IToolResult } from "../types/message.js";
 import { ExecutionTimeoutError } from "../types/errors.js";
-import { isCommandBlocked, sanitizeShellArg, redactSecrets } from "../utils/sanitizer.js";
+import { isCommandBlocked, isPathAllowed, redactSecrets } from "../utils/sanitizer.js";
 import { logger } from "../utils/logger.js";
 
 const DEFAULT_TIMEOUT_MS = 120_000; // 2 minutes
@@ -85,6 +85,7 @@ function truncateOutput(output: string): string {
 
 let workingDirectory = process.cwd();
 let blockedCommands: readonly string[] = [];
+let allowedPaths: readonly string[] = [workingDirectory];
 
 export function setBashWorkingDirectory(dir: string): void {
   workingDirectory = dir;
@@ -92,6 +93,10 @@ export function setBashWorkingDirectory(dir: string): void {
 
 export function setBashBlockedCommands(commands: readonly string[]): void {
   blockedCommands = commands;
+}
+
+export function setBashAllowedPaths(paths: readonly string[]): void {
+  allowedPaths = paths;
 }
 
 export function createBashTool(): IToolRegistration {
@@ -167,6 +172,15 @@ export function createBashTool(): IToolRegistration {
           toolCallId: "",
           name: "bash",
           content: "Command is on the blocked list and cannot be executed.",
+          isError: true,
+        };
+      }
+
+      if (!isPathAllowed(workingDirectory, allowedPaths, workingDirectory)) {
+        return {
+          toolCallId: "",
+          name: "bash",
+          content: `Access denied: working directory ${workingDirectory} is outside the configured allowed paths.`,
           isError: true,
         };
       }

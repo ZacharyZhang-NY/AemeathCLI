@@ -3,7 +3,7 @@
  * Zero trust for AI output — treat all model-generated content as untrusted
  */
 
-import { resolve, normalize, relative, isAbsolute } from "node:path";
+import { resolve, normalize } from "node:path";
 
 /**
  * Sanitize shell command arguments to prevent injection.

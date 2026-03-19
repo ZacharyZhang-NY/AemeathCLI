@@ -82,10 +82,10 @@ export class TeamManager {
   private readonly activeTeams = new Map<string, IActiveTeam>();
 
   /** Create a new team: config, directories, and agent process handles. */
-  async createTeam(
+  createTeam(
     name: string,
     options: ITeamCreateOptions,
-  ): Promise<ITeamConfig> {
+  ): ITeamConfig {
     if (this.activeTeams.has(name)) {
       throw new Error(`Team already exists: ${name}`);
     }

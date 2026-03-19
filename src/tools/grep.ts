@@ -9,7 +9,7 @@ import { promisify } from "node:util";
 import type { IToolRegistration, PermissionMode } from "../types/tool.js";
 import type { IToolResult } from "../types/message.js";
 import { logger } from "../utils/logger.js";
-import { validatePath } from "../utils/sanitizer.js";
+import { isPathAllowed, validatePath } from "../utils/sanitizer.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -159,9 +159,14 @@ function applyLimits(
 }
 
 let projectRoot = process.cwd();
+let allowedPaths: readonly string[] = [projectRoot];
 
 export function setGrepProjectRoot(root: string): void {
   projectRoot = root;
+}
+
+export function setGrepAllowedPaths(paths: readonly string[]): void {
+  allowedPaths = paths;
 }
 
 export function createGrepTool(): IToolRegistration {
@@ -272,6 +277,15 @@ export function createGrepTool(): IToolRegistration {
         searchPath = validatePath(resolved, projectRoot);
       } else {
         searchPath = projectRoot;
+      }
+
+      if (!isPathAllowed(searchPath, allowedPaths, projectRoot)) {
+        return {
+          toolCallId: "",
+          name: "grep",
+          content: `Access denied: ${searchPath} is outside the configured allowed paths.`,
+          isError: true,
+        };
       }
 
       const outputMode: OutputMode =

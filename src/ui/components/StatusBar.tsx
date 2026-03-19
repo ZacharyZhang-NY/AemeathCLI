@@ -1,10 +1,11 @@
 /**
- * Status bar component per PRD section 18.4
- * Shows: tool name, active model, role, token count, cost, git branch
+ * Status bar with flat brand color, model/role/token/cost display,
+ * and git branch indicator.
  */
 
 import React from "react";
 import { Box, Text } from "ink";
+import { BRAND_COLOR, colors } from "../theme.js";
 
 interface IStatusBarProps {
   readonly model: string;
@@ -15,7 +16,6 @@ interface IStatusBarProps {
   readonly gitChanges?: number | undefined;
 }
 
-/** Shorten model ID for the status bar: "claude-sonnet-4-6" → "Sonnet 4.6" */
 function shortModelLabel(model: string): string {
   if (model.includes("opus")) return "Opus 4.6";
   if (model.includes("sonnet")) return "Sonnet 4.6";
@@ -29,6 +29,8 @@ function shortModelLabel(model: string): string {
   return model;
 }
 
+const SEP = " \u2502 ";
+
 export function StatusBar({
   model,
   role,
@@ -38,28 +40,40 @@ export function StatusBar({
   gitChanges,
 }: IStatusBarProps): React.ReactElement {
   return (
-    <Box borderStyle="round" borderColor="gray" paddingX={1}>
-      <Text color="cyan" bold>
-        {"\u2726"} aemeathcli
+    <Box borderStyle="round" borderColor={colors.border.dim} paddingX={1}>
+      <Text color={BRAND_COLOR} bold>
+        {"\u25C6"}{" "}
       </Text>
-      <Text color="gray"> {"\u2502"} </Text>
-      <Text color="yellow" bold>{shortModelLabel(model)}</Text>
+      <Text color={colors.status.active} bold>
+        Aemeath Agent Swarm
+      </Text>
+
+      <Text color={colors.text.muted}>{SEP}</Text>
+      <Text color={colors.status.warning} bold>
+        {shortModelLabel(model)}
+      </Text>
+
       {role ? (
         <>
-          <Text color="gray"> {"\u2502"} </Text>
-          <Text color="magenta">{role}</Text>
+          <Text color={colors.text.muted}>{SEP}</Text>
+          <Text color={colors.role.tool}>{role}</Text>
         </>
       ) : null}
-      <Text color="gray"> {"\u2502"} </Text>
-      <Text>{tokenCount} tok</Text>
-      <Text color="gray"> {"\u2502"} </Text>
-      <Text color="green">{cost}</Text>
+
+      <Text color={colors.text.muted}>{SEP}</Text>
+      <Text color={colors.text.secondary}>{tokenCount} tok</Text>
+
+      <Text color={colors.text.muted}>{SEP}</Text>
+      <Text color={colors.status.success}>{cost}</Text>
+
       {gitBranch ? (
         <>
-          <Text color="gray"> {"\u2502"} </Text>
-          <Text color="blue">
+          <Text color={colors.text.muted}>{SEP}</Text>
+          <Text color={colors.status.info}>
             {"\u2387"} {gitBranch}
-            {gitChanges !== undefined && gitChanges > 0 ? ` \u00B1${gitChanges}` : ""}
+            {gitChanges !== undefined && gitChanges > 0
+              ? ` \u00B1${gitChanges}`
+              : ""}
           </Text>
         </>
       ) : null}

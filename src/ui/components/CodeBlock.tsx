@@ -1,15 +1,15 @@
 /**
- * Syntax-highlighted code block display per PRD section 6.2
- * Uses basic ANSI colors for code highlighting in terminal
+ * Code block display with themed line numbers and language label.
  */
 
 import React from "react";
 import { Box, Text } from "ink";
+import { colors } from "../theme.js";
 
 interface ICodeBlockProps {
   readonly code: string;
-  readonly language?: string;
-  readonly fileName?: string;
+  readonly language?: string | undefined;
+  readonly fileName?: string | undefined;
 }
 
 export function CodeBlock({
@@ -20,10 +20,15 @@ export function CodeBlock({
   const lines = code.split("\n");
 
   return (
-    <Box flexDirection="column" borderStyle="single" borderColor="gray" marginY={1}>
+    <Box
+      flexDirection="column"
+      borderStyle="round"
+      borderColor={colors.border.dim}
+      marginY={1}
+    >
       {(fileName ?? language) ? (
-        <Box paddingX={1} borderBottom>
-          <Text color="gray" dimColor>
+        <Box paddingX={1}>
+          <Text color={colors.text.muted} dimColor>
             {fileName ?? language}
           </Text>
         </Box>
@@ -31,10 +36,10 @@ export function CodeBlock({
       <Box flexDirection="column" paddingX={1}>
         {lines.map((line, index) => (
           <Box key={index}>
-            <Text color="gray" dimColor>
-              {String(index + 1).padStart(4, " ")}{" "}
+            <Text color={colors.text.muted} dimColor>
+              {String(index + 1).padStart(3, " ")} {"\u2502"}{" "}
             </Text>
-            <Text>{line}</Text>
+            <Text color={colors.text.response}>{line}</Text>
           </Box>
         ))}
       </Box>

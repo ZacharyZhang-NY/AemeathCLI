@@ -108,12 +108,12 @@ export class SqliteStore {
     return this.database.prepare(sql).run(...params);
   }
 
-  get<T>(sql: string, ...params: readonly unknown[]): T | undefined {
-    return this.database.prepare(sql).get(...params) as T | undefined;
+  get(sql: string, ...params: unknown[]): unknown {
+    return this.database.prepare(sql).get(...params);
   }
 
-  all<T>(sql: string, ...params: readonly unknown[]): T[] {
-    return this.database.prepare(sql).all(...params) as T[];
+  all(sql: string, ...params: unknown[]): unknown[] {
+    return this.database.prepare(sql).all(...params);
   }
 
   transaction<T>(fn: () => T): T {

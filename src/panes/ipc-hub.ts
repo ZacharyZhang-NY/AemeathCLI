@@ -23,7 +23,7 @@ interface IRegisteredClient {
 type MethodHandler = (
   clientId: string, params: Record<string, unknown>,
   id: number | undefined, socket: Socket,
-) => Promise<unknown>;
+) => unknown;
 
 // ── Constants ───────────────────────────────────────────────────────────
 
@@ -66,16 +66,24 @@ export class IPCHub {
     await this.removeStaleSocket();
 
     return new Promise<void>((resolve, reject) => {
-      this.server = createServer((socket) => this.handleConnection(socket));
+      this.server = createServer((socket) => {
+        this.handleConnection(socket);
+      });
       this.server.on("error", (err: Error) => {
         logger.error({ error: err.message }, "IPC server error");
         reject(new IPCError(`Server error: ${err.message}`));
       });
-      this.server.listen(this.socketPath, async () => {
-        try { await chmod(this.socketPath, SOCKET_PERMS); } catch { /* non-fatal */ }
-        logger.info({ socketPath: this.socketPath }, "IPC hub listening");
-        this.setupProcessCleanup();
-        resolve();
+      this.server.listen(this.socketPath, () => {
+        void (async () => {
+          try {
+            await chmod(this.socketPath, SOCKET_PERMS);
+          } catch {
+            /* non-fatal */
+          }
+          logger.info({ socketPath: this.socketPath }, "IPC hub listening");
+          this.setupProcessCleanup();
+          resolve();
+        })();
       });
     });
   }
@@ -101,7 +109,7 @@ export class IPCHub {
   }
 
   /** Compute HMAC-SHA256 for a message. */
-  computeHmac(message: IIPCMessage): string {
+  computeHmac(message: unknown): string {
     return createHmac("sha256", this.hmacSecret)
       .update(JSON.stringify(message)).digest("hex");
   }
@@ -121,7 +129,12 @@ export class IPCHub {
     }
     this.clients.clear();
     if (this.server) {
-      await new Promise<void>((r) => { this.server!.close(() => r()); });
+      const server = this.server;
+      await new Promise<void>((resolve) => {
+        server.close(() => {
+          resolve();
+        });
+      });
       this.server = undefined;
     }
     await this.removeStaleSocket();
@@ -168,12 +181,13 @@ export class IPCHub {
       this.sendError(socket, undefined, RPC_INVALID_REQ, "Invalid request format"); return undefined;
     }
     const { message, hmac } = parsed;
+    const requestId = this.getRequestId(message);
 
     if (!this.verifyHmac(message, hmac)) {
-      this.sendError(socket, message.id, RPC_AUTH_ERROR, "Authentication failed"); return undefined;
+      this.sendError(socket, requestId, RPC_AUTH_ERROR, "Authentication failed"); return undefined;
     }
-    if (message.jsonrpc !== "2.0" || !message.method) {
-      this.sendError(socket, message.id, RPC_INVALID_REQ, "Invalid JSON-RPC 2.0"); return undefined;
+    if (!this.isIPCMessage(message)) {
+      this.sendError(socket, requestId, RPC_INVALID_REQ, "Invalid JSON-RPC 2.0"); return undefined;
     }
 
     const handler = this.handlers.get(message.method);
@@ -195,7 +209,7 @@ export class IPCHub {
   // ── Default Handlers ──────────────────────────────────────────────
 
   private registerDefaultHandlers(): void {
-    this.handlers.set("agent.register", async (_cid, params, _id, socket) => {
+    this.handlers.set("agent.register", (_cid, params, _id, socket) => {
       const agentId = params["agentId"] as string | undefined;
       const agentName = params["agentName"] as string | undefined;
       if (!agentId || !agentName) throw new IPCError("agent.register requires agentId and agentName");
@@ -204,7 +218,7 @@ export class IPCHub {
       return { registered: true, agentId };
     });
 
-    this.handlers.set("agent.streamChunk", async (_cid, params) => {
+    this.handlers.set("agent.streamChunk", (_cid, params) => {
       getEventBus().emit("model:stream:chunk", {
         model: (params["model"] as string | undefined) ?? "unknown",
         content: (params["content"] as string | undefined) ?? "",
@@ -212,14 +226,14 @@ export class IPCHub {
       return { received: true };
     });
 
-    this.handlers.set("agent.taskUpdate", async (_cid, params) => {
+    this.handlers.set("agent.taskUpdate", (_cid, params) => {
       const taskId = params["taskId"] as string | undefined;
       const status = params["status"] as string | undefined;
       if (taskId && status) getEventBus().emit("task:updated", { taskId, status });
       return { received: true };
     });
 
-    this.handlers.set("agent.message", async (_cid, params) => {
+    this.handlers.set("agent.message", (_cid, params) => {
       const to = params["to"] as string | undefined;
       const content = params["content"] as string | undefined;
       const from = params["from"] as string | undefined;
@@ -233,7 +247,7 @@ export class IPCHub {
       return { delivered: this.clients.has(to ?? "") };
     });
 
-    this.handlers.set("hub.taskAssign", async (_cid, params) => {
+    this.handlers.set("hub.taskAssign", (_cid, params) => {
       const agentId = params["agentId"] as string | undefined;
       const taskId = params["taskId"] as string | undefined;
       if (agentId && taskId) {
@@ -243,7 +257,7 @@ export class IPCHub {
       return { assigned: this.clients.has(agentId ?? "") };
     });
 
-    this.handlers.set("hub.shutdown", async (_cid, params) => {
+    this.handlers.set("hub.shutdown", (_cid, params) => {
       const agentId = params["agentId"] as string | undefined;
       if (agentId) {
         const target = this.clients.get(agentId);
@@ -260,16 +274,31 @@ export class IPCHub {
 
   // ── HMAC ──────────────────────────────────────────────────────────
 
-  private verifyHmac(message: IIPCMessage, hmac: string): boolean {
+  private verifyHmac(message: unknown, hmac: string): boolean {
     const expected = this.computeHmac(message);
     if (expected.length !== hmac.length) return false;
     return timingSafeEqual(Buffer.from(expected, "hex"), Buffer.from(hmac, "hex"));
   }
 
-  private isAuthEnvelope(v: unknown): v is { message: IIPCMessage; hmac: string } {
+  private isAuthEnvelope(v: unknown): v is { message: unknown; hmac: string } {
     if (typeof v !== "object" || v === null) return false;
     const o = v as Record<string, unknown>;
     return typeof o["hmac"] === "string" && typeof o["message"] === "object" && o["message"] !== null;
+  }
+
+  private isIPCMessage(v: unknown): v is IIPCMessage {
+    if (typeof v !== "object" || v === null) return false;
+    const o = v as Record<string, unknown>;
+    return o["jsonrpc"] === "2.0"
+      && typeof o["method"] === "string"
+      && typeof o["params"] === "object"
+      && o["params"] !== null;
+  }
+
+  private getRequestId(v: unknown): number | undefined {
+    if (typeof v !== "object" || v === null) return undefined;
+    const o = v as Record<string, unknown>;
+    return typeof o["id"] === "number" ? o["id"] : undefined;
   }
 
   // ── I/O ───────────────────────────────────────────────────────────

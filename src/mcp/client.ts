@@ -160,8 +160,8 @@ export class MCPClient {
       const result = await client.listTools();
       return result.tools.map((tool) => ({
         name: tool.name,
-        description: tool.description ?? "",
-        inputSchema: (tool.inputSchema ?? {}) as Readonly<Record<string, unknown>>,
+        description: typeof tool.description === "string" ? tool.description : "",
+        inputSchema: tool.inputSchema as Readonly<Record<string, unknown>>,
       }));
     } catch (error: unknown) {
       const msg = error instanceof Error ? error.message : String(error);
@@ -196,9 +196,9 @@ export class MCPClient {
       const result = await client.listResources();
       return result.resources.map((r) => ({
         uri: r.uri,
-        name: r.name ?? r.uri,
+        name: typeof r.name === "string" ? r.name : r.uri,
         description: "",
-        mimeType: r.mimeType ?? "application/octet-stream",
+        mimeType: typeof r.mimeType === "string" ? r.mimeType : "application/octet-stream",
       }));
     } catch (error: unknown) {
       const msg = error instanceof Error ? error.message : String(error);
@@ -235,12 +235,9 @@ export class MCPClient {
 
     const timeoutPromise = new Promise<never>((_resolve, reject) => {
       setTimeout(
-        () =>
-          reject(
-            new Error(
-              `Connection timed out after ${this.connectionTimeoutMs}ms`,
-            ),
-          ),
+        () => {
+          reject(new Error(`Connection timed out after ${this.connectionTimeoutMs}ms`));
+        },
         this.connectionTimeoutMs,
       );
     });
@@ -257,7 +254,7 @@ export class MCPClient {
       return;
     }
 
-    if (this.transportConfig.type === "streamable-http") {
+    else {
       const { StreamableHTTPClientTransport } = await import(
         "@modelcontextprotocol/sdk/client/streamableHttp.js"
       );
@@ -267,13 +264,6 @@ export class MCPClient {
       await Promise.race([client.connect(transport as Transport), timeoutPromise]);
       return;
     }
-
-    // Exhaustiveness guard
-    const _exhaustive: never = this.transportConfig;
-    throw new ServerConnectionError(
-      this.serverName,
-      `Unknown transport type: ${JSON.stringify(_exhaustive)}`,
-    );
   }
 
   private requireConnected(): Client {

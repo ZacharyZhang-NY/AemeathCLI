@@ -1,9 +1,11 @@
 /**
- * Tool execution output display per PRD section 6.2
+ * Tool execution output display — delegates to ToolCallDisplay
+ * for rich status visualization.
  */
 
 import React from "react";
-import { Box, Text } from "ink";
+import { Box } from "ink";
+import { ToolCallDisplay } from "./ToolCallDisplay.js";
 
 interface IToolOutputProps {
   readonly toolName: string;
@@ -17,21 +19,14 @@ export function ToolOutput({
   isError,
 }: IToolOutputProps): React.ReactElement {
   return (
-    <Box
-      flexDirection="column"
-      borderStyle="single"
-      borderColor={isError ? "red" : "gray"}
-      paddingX={1}
-      marginY={1}
-    >
-      <Text color={isError ? "red" : "magenta"} bold>
-        {isError ? "Error" : "Tool"}: {toolName}
-      </Text>
-      <Box marginLeft={2}>
-        <Text wrap="wrap" {...(isError ? { color: "red" as const } : {})}>
-          {content.length > 2000 ? content.slice(0, 2000) + "\n... (truncated)" : content}
-        </Text>
-      </Box>
+    <Box marginY={0}>
+      <ToolCallDisplay
+        toolName={toolName}
+        status={isError ? "error" : "success"}
+        output={content}
+        isError={isError}
+        isCollapsed={false}
+      />
     </Box>
   );
 }

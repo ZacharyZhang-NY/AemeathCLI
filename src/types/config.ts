@@ -5,6 +5,7 @@
 import type { ProviderName, ModelRole, IRoleConfig } from "./model.js";
 import type { PermissionMode } from "./tool.js";
 import type { PaneLayout } from "./team.js";
+import { PACKAGE_VERSION } from "../version.js";
 
 // ── Provider Configuration ───────────────────────────────────────────────
 
@@ -127,7 +128,7 @@ export interface ICredential {
 // ── Default Configuration ────────────────────────────────────────────────
 
 export const DEFAULT_CONFIG: IGlobalConfig = {
-  version: "1.0.0",
+  version: PACKAGE_VERSION,
   defaultModel: "claude-sonnet-4-6",
   roles: {
     planning: { primary: "claude-opus-4-6", fallback: ["gpt-5.2", "gemini-2.5-pro"] },

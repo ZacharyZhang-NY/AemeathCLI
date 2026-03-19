@@ -6,7 +6,7 @@
  */
 
 import { readFileSync, writeFileSync, watchFile, unwatchFile } from "node:fs";
-import { existsSync, chmodSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { dirname } from "node:path";
 import { z } from "zod";
 import { logger } from "../utils/logger.js";
@@ -23,36 +23,36 @@ import type { IGlobalConfig } from "../types/config.js";
 const ProviderConfigSchema = z.object({
   enabled: z.boolean(),
   baseUrl: z.string().optional(),
-});
+}).strict();
 
 const PermissionConfigSchema = z.object({
   mode: z.enum(["strict", "standard", "permissive"]),
   allowedPaths: z.array(z.string()),
   blockedCommands: z.array(z.string()),
-});
+}).strict();
 
 const SplitPanelConfigSchema = z.object({
   enabled: z.boolean(),
   backend: z.enum(["tmux", "iterm2"]),
   defaultLayout: z.enum(["auto", "horizontal", "vertical", "grid"]),
   maxPanes: z.number().int().min(1).max(16),
-});
+}).strict();
 
 const CostConfigSchema = z.object({
   budgetWarning: z.number().nonnegative(),
   budgetHardStop: z.number().nonnegative(),
   currency: z.string(),
-});
+}).strict();
 
 const TelemetryConfigSchema = z.object({
   enabled: z.boolean(),
   anonymized: z.boolean(),
-});
+}).strict();
 
 const RoleConfigSchema = z.object({
   primary: z.string(),
   fallback: z.array(z.string()),
-});
+}).strict();
 
 const OAuthProviderConfigSchema = z.object({
   clientId: z.string(),
@@ -60,14 +60,14 @@ const OAuthProviderConfigSchema = z.object({
   authorizeUrl: z.string().optional(),
   tokenUrl: z.string().optional(),
   scope: z.string().optional(),
-});
+}).strict();
 
 const OAuthConfigSchema = z.object({
   anthropic: OAuthProviderConfigSchema.optional(),
   openai: OAuthProviderConfigSchema.optional(),
   google: OAuthProviderConfigSchema.optional(),
   kimi: OAuthProviderConfigSchema.optional(),
-});
+}).strict();
 
 const GlobalConfigSchema = z.object({
   version: z.string(),
@@ -79,7 +79,13 @@ const GlobalConfigSchema = z.object({
   cost: CostConfigSchema.optional(),
   telemetry: TelemetryConfigSchema.optional(),
   oauth: OAuthConfigSchema.optional(),
-});
+}).strict();
+
+function formatValidationError(error: z.ZodError): string {
+  return error.issues
+    .map((issue) => `${issue.path.join(".") || "<root>"}: ${issue.message}`)
+    .join("; ");
+}
 
 type ConfigChangeCallback = (config: IGlobalConfig) => void;
 
@@ -107,8 +113,17 @@ export class ConfigStore {
       return this.mergedConfig;
     }
 
-    const raw = readFileSync(resolvedPath, "utf-8");
-    const parsed: unknown = JSON.parse(raw);
+    let parsed: unknown;
+    try {
+      const raw = readFileSync(resolvedPath, "utf-8");
+      parsed = JSON.parse(raw);
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.warn({ error: message, path: resolvedPath }, "Global config parse failed, using defaults");
+      this.globalConfig = DEFAULT_CONFIG;
+      this.rebuildMergedConfig();
+      return this.mergedConfig;
+    }
     const validated = GlobalConfigSchema.safeParse(parsed);
 
     if (!validated.success) {
@@ -141,8 +156,17 @@ export class ConfigStore {
       return this.mergedConfig;
     }
 
-    const raw = readFileSync(resolvedPath, "utf-8");
-    const parsed: unknown = JSON.parse(raw);
+    let parsed: unknown;
+    try {
+      const raw = readFileSync(resolvedPath, "utf-8");
+      parsed = JSON.parse(raw);
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.warn({ error: message, path: resolvedPath }, "Project config parse failed, ignoring");
+      this.projectConfig = undefined;
+      this.rebuildMergedConfig();
+      return this.mergedConfig;
+    }
     const validated = GlobalConfigSchema.partial().safeParse(parsed);
 
     if (!validated.success) {
@@ -168,15 +192,20 @@ export class ConfigStore {
   ): void {
     const resolvedPath = configPath ?? getConfigPath();
     const configToSave = config ?? this.globalConfig;
+    const validated = GlobalConfigSchema.safeParse(configToSave);
+
+    if (!validated.success) {
+      throw new Error(`Invalid global config: ${formatValidationError(validated.error)}`);
+    }
 
     ensureDirectory(dirname(resolvedPath));
-    const json = JSON.stringify(configToSave, null, 2);
+    const json = JSON.stringify(validated.data, null, 2);
     writeFileSync(resolvedPath, json, { encoding: "utf-8", mode: 0o600 });
 
     logger.info({ path: resolvedPath }, "Global config saved");
 
     if (config) {
-      this.globalConfig = config;
+      this.globalConfig = this.applyDefaults(validated.data);
       this.rebuildMergedConfig();
     }
   }
@@ -186,12 +215,17 @@ export class ConfigStore {
     config: Partial<IGlobalConfig>,
   ): void {
     const resolvedPath = getProjectConfigPath(projectRoot);
+    const validated = GlobalConfigSchema.partial().safeParse(config);
+
+    if (!validated.success) {
+      throw new Error(`Invalid project config: ${formatValidationError(validated.error)}`);
+    }
 
     ensureDirectory(dirname(resolvedPath));
-    const json = JSON.stringify(config, null, 2);
+    const json = JSON.stringify(validated.data, null, 2);
     writeFileSync(resolvedPath, json, { encoding: "utf-8", mode: 0o600 });
 
-    this.projectConfig = config;
+    this.projectConfig = validated.data as Partial<IGlobalConfig>;
     this.rebuildMergedConfig();
 
     logger.info({ path: resolvedPath }, "Project config saved");

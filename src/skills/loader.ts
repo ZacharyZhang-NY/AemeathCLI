@@ -24,9 +24,9 @@ const MODEL_ROLE_VALUES: readonly [ModelRole, ...ModelRole[]] = [
 const skillFrontmatterSchema = z.object({
   name: z.string().min(1, "Skill name is required"),
   description: z.string().min(1, "Skill description is required"),
-  version: z.string().regex(/^\d+\.\d+\.\d+$/, "Version must be semver (e.g. 1.0.0)"),
+  version: z.string().regex(/^\d+\.\d+\.\d+$/, "Version must be semver (e.g. 1.0.0)").optional(),
   "allowed-tools": z.array(z.string().min(1)).optional(),
-  triggers: z.array(z.string().min(1)).min(1, "At least one trigger is required"),
+  triggers: z.array(z.string().min(1)).min(1).optional(),
   "model-requirements": z
     .object({
       "preferred-role": z.enum(MODEL_ROLE_VALUES).optional(),
@@ -89,13 +89,15 @@ export class SkillLoader {
 
     const validated = result.data;
 
-    // Build frontmatter with conditional spreads for exactOptionalPropertyTypes
+    // Build frontmatter with defaults for missing optional fields.
+    // External skills (e.g. from ~/.agents/skills/) often only have name + description.
     const modelReqs = validated["model-requirements"];
+    const skillName = validated.name;
     const frontmatter: ISkillFrontmatter = {
-      name: validated.name,
+      name: skillName,
       description: validated.description,
-      version: validated.version,
-      triggers: validated.triggers,
+      version: validated.version ?? "0.0.0",
+      triggers: validated.triggers ?? [`$${skillName}`, skillName],
       // Only include optional properties when they are defined (not undefined)
       ...(validated["allowed-tools"] !== undefined
         ? { "allowed-tools": validated["allowed-tools"] }

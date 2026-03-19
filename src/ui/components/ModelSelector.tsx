@@ -1,17 +1,19 @@
 /**
- * Interactive model selector with up/down arrow key navigation.
- * Groups models by provider, highlights current selection.
- * Page 1 of the /model selection flow.
+ * Interactive model selector with provider grouping,
+ * gradient highlights, and provider icons.
  */
 
 import React, { useState, useMemo } from "react";
 import { Box, Text, useInput } from "ink";
-import { PROVIDER_MODEL_ORDER } from "../../types/model.js";
+import { colors } from "../theme.js";
+import type { IModelDisplayEntry } from "../../types/model.js";
 
 interface IModelSelectorProps {
   readonly currentModelId: string;
   readonly onSelect: (modelId: string) => void;
   readonly onCancel: () => void;
+  /** Provider-grouped model list (dynamic, from model-discovery). */
+  readonly modelOrder?: Readonly<Record<string, readonly IModelDisplayEntry[]>> | undefined;
 }
 
 interface ISelectorRow {
@@ -23,17 +25,27 @@ interface ISelectorRow {
 }
 
 const PROVIDER_LABELS: Readonly<Record<string, string>> = {
-  anthropic: "Claude (Anthropic)",
-  openai: "Codex (OpenAI)",
-  google: "Gemini (Google)",
-  kimi: "Kimi (Moonshot)",
+  anthropic: "\u2726 Claude (Anthropic)",
+  openai: "\u2B22 Codex (OpenAI)",
+  google: "\u25C6 Gemini (Google)",
+  kimi: "\u25CE Kimi (Moonshot)",
 };
 
-export function ModelSelector({ currentModelId, onSelect, onCancel }: IModelSelectorProps): React.ReactElement {
+export function ModelSelector({
+  currentModelId,
+  onSelect,
+  onCancel,
+  modelOrder,
+}: IModelSelectorProps): React.ReactElement {
   const rows = useMemo<readonly ISelectorRow[]>(() => {
+    // Use dynamic model order if provided, otherwise lazy-import hardcoded
+    const order = modelOrder ?? {};
     const result: ISelectorRow[] = [];
-    for (const [providerKey, entries] of Object.entries(PROVIDER_MODEL_ORDER)) {
-      result.push({ type: "header", label: PROVIDER_LABELS[providerKey] ?? providerKey });
+    for (const [providerKey, entries] of Object.entries(order)) {
+      result.push({
+        type: "header",
+        label: PROVIDER_LABELS[providerKey] ?? providerKey,
+      });
       for (const entry of entries) {
         result.push({
           type: "model",
@@ -56,7 +68,9 @@ export function ModelSelector({ currentModelId, onSelect, onCancel }: IModelSele
   }, [rows]);
 
   const initialIndex = useMemo(() => {
-    const rowIdx = rows.findIndex((r) => r.type === "model" && r.modelId === currentModelId);
+    const rowIdx = rows.findIndex(
+      (r) => r.type === "model" && r.modelId === currentModelId,
+    );
     const selectIdx = selectableIndices.indexOf(rowIdx);
     return selectIdx >= 0 ? selectIdx : 0;
   }, [rows, selectableIndices, currentModelId]);
@@ -65,9 +79,13 @@ export function ModelSelector({ currentModelId, onSelect, onCancel }: IModelSele
 
   useInput((_input, key) => {
     if (key.upArrow) {
-      setCursor((prev) => (prev > 0 ? prev - 1 : selectableIndices.length - 1));
+      setCursor((prev) =>
+        prev > 0 ? prev - 1 : selectableIndices.length - 1,
+      );
     } else if (key.downArrow) {
-      setCursor((prev) => (prev < selectableIndices.length - 1 ? prev + 1 : 0));
+      setCursor((prev) =>
+        prev < selectableIndices.length - 1 ? prev + 1 : 0,
+      );
     } else if (key.return) {
       const rowIdx = selectableIndices[cursor];
       const row = rowIdx !== undefined ? rows[rowIdx] : undefined;
@@ -80,30 +98,57 @@ export function ModelSelector({ currentModelId, onSelect, onCancel }: IModelSele
   return (
     <Box flexDirection="column" padding={1}>
       <Box marginBottom={1}>
-        <Text bold color="cyan">Select Model</Text>
-        <Text color="gray">  (up/down navigate, Enter select, Esc cancel)</Text>
+        <Text bold color={colors.status.active}>
+          Select Model
+        </Text>
+        <Text color={colors.text.muted}>
+          {"  "}\u2191\u2193 navigate \u00B7 Enter select \u00B7 Esc cancel
+        </Text>
       </Box>
+
       {rows.map((row, idx) => {
         if (row.type === "header") {
           return (
             <Box key={`header-${idx}`} marginTop={idx > 0 ? 1 : 0}>
-              <Text bold color="yellow">  [{row.label}]</Text>
+              <Text bold color={colors.status.warning}>
+                {"  "}
+                {row.label}
+              </Text>
             </Box>
           );
         }
+
         const isHighlighted = selectableIndices[cursor] === idx;
         const currentTag = row.isCurrent ? " (current)" : "";
+
         return (
           <Box key={row.modelId ?? `row-${idx}`}>
-            <Text {...(isHighlighted ? { color: "green" } : {})} bold={isHighlighted}>
-              {isHighlighted ? "> " : "  "}{(row.label ?? "").padEnd(30)}
+            <Text
+              color={
+                isHighlighted
+                  ? colors.status.success
+                  : row.isCurrent
+                    ? colors.text.accent
+                    : colors.text.primary
+              }
+              bold={isHighlighted}
+            >
+              {isHighlighted ? "\u25B8 " : "  "}
+              {row.label.padEnd(30)}
             </Text>
-            <Text color="gray"> {row.description}{currentTag}</Text>
+            <Text color={colors.text.muted}>
+              {" "}
+              {row.description}
+              {currentTag}
+            </Text>
           </Box>
         );
       })}
+
       <Box marginTop={1}>
-        <Text color="gray">  Current: {currentModelId}</Text>
+        <Text color={colors.text.muted}>
+          {"  "}Current: {currentModelId}
+        </Text>
       </Box>
     </Box>
   );

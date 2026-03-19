@@ -63,10 +63,10 @@ export class ConversationStore {
 
     logger.info({ conversationId: id, projectRoot }, "Conversation created");
 
-    const row = this.store.get<IConversationRow>(
+    const row = this.store.get(
       "SELECT * FROM conversations WHERE id = ?",
       id,
-    );
+    ) as IConversationRow | undefined;
 
     if (!row) {
       throw new Error(`Failed to retrieve created conversation: ${id}`);
@@ -76,22 +76,22 @@ export class ConversationStore {
   }
 
   getConversation(id: string): IConversation | undefined {
-    const row = this.store.get<IConversationRow>(
+    const row = this.store.get(
       "SELECT * FROM conversations WHERE id = ?",
       id,
-    );
+    ) as IConversationRow | undefined;
     return row ? this.mapConversationRow(row) : undefined;
   }
 
   listConversations(projectRoot?: string): IConversation[] {
     const rows = projectRoot
-      ? this.store.all<IConversationRow>(
+      ? (this.store.all(
           "SELECT * FROM conversations WHERE project_root = ? ORDER BY updated_at DESC",
           projectRoot,
-        )
-      : this.store.all<IConversationRow>(
+        ) as IConversationRow[])
+      : (this.store.all(
           "SELECT * FROM conversations ORDER BY updated_at DESC",
-        );
+        ) as IConversationRow[]);
 
     return rows.map((row) => this.mapConversationRow(row));
   }
@@ -127,10 +127,10 @@ export class ConversationStore {
       params.conversationId,
     );
 
-    const row = this.store.get<IMessageRow>(
+    const row = this.store.get(
       "SELECT * FROM messages WHERE id = ?",
       result.lastInsertRowid,
-    );
+    ) as IMessageRow | undefined;
 
     if (!row) {
       throw new Error("Failed to retrieve created message");
@@ -146,7 +146,7 @@ export class ConversationStore {
     const limit = pagination?.limit ?? 100;
     const offset = pagination?.offset ?? 0;
 
-    const rows = this.store.all<IMessageRow>(
+    const rows = this.store.all(
       `SELECT * FROM messages
        WHERE conversation_id = ?
        ORDER BY created_at ASC
@@ -154,16 +154,16 @@ export class ConversationStore {
       conversationId,
       limit,
       offset,
-    );
+    ) as IMessageRow[];
 
     return rows.map((row) => this.mapMessageRow(row));
   }
 
   getMessageCount(conversationId: string): number {
-    const result = this.store.get<{ count: number }>(
+    const result = this.store.get(
       "SELECT COUNT(*) as count FROM messages WHERE conversation_id = ?",
       conversationId,
-    );
+    ) as { count: number } | undefined;
     return result?.count ?? 0;
   }
 
@@ -178,10 +178,10 @@ export class ConversationStore {
       params.tokenCount ?? null,
     );
 
-    const row = this.store.get<IFileContextRow>(
+    const row = this.store.get(
       "SELECT * FROM file_context WHERE id = ?",
       result.lastInsertRowid,
-    );
+    ) as IFileContextRow | undefined;
 
     if (!row) {
       throw new Error("Failed to retrieve created file context");
@@ -191,10 +191,10 @@ export class ConversationStore {
   }
 
   getFileContext(conversationId: string): IFileContext[] {
-    const rows = this.store.all<IFileContextRow>(
+    const rows = this.store.all(
       "SELECT * FROM file_context WHERE conversation_id = ? ORDER BY added_at DESC",
       conversationId,
-    );
+    ) as IFileContextRow[];
     return rows.map((row) => this.mapFileContextRow(row));
   }
 
@@ -220,10 +220,10 @@ export class ConversationStore {
       params.costUsd ?? null,
     );
 
-    const row = this.store.get<ICostRow>(
+    const row = this.store.get(
       "SELECT * FROM cost_tracking WHERE id = ?",
       result.lastInsertRowid,
-    );
+    ) as ICostRow | undefined;
 
     if (!row) {
       throw new Error("Failed to retrieve created cost entry");
@@ -233,18 +233,18 @@ export class ConversationStore {
   }
 
   getConversationCost(conversationId: string): number {
-    const result = this.store.get<{ total: number | null }>(
+    const result = this.store.get(
       "SELECT SUM(cost_usd) as total FROM cost_tracking WHERE conversation_id = ?",
       conversationId,
-    );
+    ) as { total: number | null } | undefined;
     return result?.total ?? 0;
   }
 
   getCostBreakdown(conversationId: string): ICostEntry[] {
-    const rows = this.store.all<ICostRow>(
+    const rows = this.store.all(
       "SELECT * FROM cost_tracking WHERE conversation_id = ? ORDER BY created_at ASC",
       conversationId,
-    );
+    ) as ICostRow[];
     return rows.map((row) => this.mapCostRow(row));
   }
 

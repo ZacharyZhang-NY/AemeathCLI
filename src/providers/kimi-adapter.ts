@@ -29,7 +29,18 @@ const DEFAULT_BASE_URL = "https://api.moonshot.cn/v1";
 const KIMI_MODELS: readonly string[] = ["kimi-for-coding"] as const;
 const CHARS_PER_TOKEN_ESTIMATE = 4;
 
-interface OpenAIMessage { role: string; content: string }
+interface OpenAIStandardMessage {
+  role: "system" | "user" | "assistant";
+  content: string | null;
+  tool_calls?: readonly OpenAIToolCallRef[] | undefined;
+}
+interface OpenAIToolResultMessage {
+  role: "tool";
+  content: string;
+  tool_call_id: string;
+  name: string;
+}
+type OpenAIMessage = OpenAIStandardMessage | OpenAIToolResultMessage;
 interface OpenAITool { type: "function"; function: { name: string; description: string; parameters: Record<string, unknown> } }
 interface OpenAIToolCallRef { id: string; type: string; function: { name: string; arguments: string } }
 interface OpenAIChoice {
@@ -41,10 +52,45 @@ interface OpenAIUsage { prompt_tokens: number; completion_tokens: number; total_
 interface OpenAIChatResponse { id: string; choices: OpenAIChoice[]; usage: OpenAIUsage }
 
 function convertMessages(messages: readonly IChatMessage[]): OpenAIMessage[] {
-  return messages.map((msg) => ({
-    role: msg.role,
-    content: msg.content,
-  }));
+  const converted: OpenAIMessage[] = [];
+
+  for (const msg of messages) {
+    if (msg.role === "assistant" && msg.toolCalls !== undefined && msg.toolCalls.length > 0) {
+      converted.push({
+        role: "assistant" as const,
+        content: msg.content.length > 0 ? msg.content : null,
+        tool_calls: msg.toolCalls.map((toolCall) => ({
+          id: toolCall.id,
+          type: "function",
+          function: {
+            name: toolCall.name,
+            arguments: JSON.stringify(toolCall.arguments),
+          },
+        })),
+      });
+      continue;
+    }
+
+    if (msg.role === "tool") {
+      const toolCall = msg.toolCalls?.[0];
+      if (toolCall !== undefined) {
+        converted.push({
+          role: "tool" as const,
+          content: msg.content,
+          tool_call_id: toolCall.id,
+          name: toolCall.name,
+        });
+        continue;
+      }
+    }
+
+    converted.push({
+      role: msg.role as "system" | "user" | "assistant",
+      content: msg.content,
+    });
+  }
+
+  return converted;
 }
 
 function convertTools(tools: readonly IToolDefinition[] | undefined): OpenAITool[] | undefined {
@@ -104,6 +150,7 @@ async function handleResponseError(response: Response, model: string): Promise<n
 export class KimiAdapter implements IModelProvider {
   readonly name = PROVIDER_NAME;
   readonly supportedModels = KIMI_MODELS;
+  readonly supportsToolCalling = true;
 
   private readonly baseUrl: string;
   private readonly apiKey: string;
@@ -238,8 +285,8 @@ export class KimiAdapter implements IModelProvider {
     }
   }
 
-  async countTokens(text: string, _model: string): Promise<number> {
-    return Math.ceil(text.length / CHARS_PER_TOKEN_ESTIMATE);
+  countTokens(text: string, _model: string): Promise<number> {
+    return Promise.resolve(Math.ceil(text.length / CHARS_PER_TOKEN_ESTIMATE));
   }
 
   getModelInfo(model: string): IModelInfo {

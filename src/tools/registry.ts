@@ -10,7 +10,6 @@ import type {
   ToolCategory,
 } from "../types/tool.js";
 import type { IToolDefinition, IToolResult, IToolCall } from "../types/message.js";
-import { PermissionDeniedError, ToolCallError } from "../types/errors.js";
 import { logger } from "../utils/logger.js";
 import { redactSecrets } from "../utils/sanitizer.js";
 

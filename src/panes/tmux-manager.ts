@@ -4,7 +4,7 @@
  */
 
 import { execa } from "execa";
-import type { ILayoutConfig, IPaneConfig } from "../types/team.js";
+import type { ILayoutConfig } from "../types/team.js";
 import type { IComputedLayout, IPaneGeometry } from "./layout-engine.js";
 import { LayoutEngine } from "./layout-engine.js";
 import { getEventBus } from "../core/event-bus.js";
@@ -70,6 +70,10 @@ export class TmuxManager {
     }
 
     this.sessionName = `${this.sessionPrefix}-${teamName}`;
+    const stdout = {
+      columns: process.stdout.columns as number | undefined,
+      rows: process.stdout.rows as number | undefined,
+    };
 
     // Kill any existing session with the same name
     await this.killSessionSilent(this.sessionName);
@@ -79,8 +83,8 @@ export class TmuxManager {
         "new-session",
         "-d",
         "-s", this.sessionName,
-        "-x", String(process.stdout.columns ?? 120),
-        "-y", String(process.stdout.rows ?? 40),
+        "-x", String(stdout.columns ?? 120),
+        "-y", String(stdout.rows ?? 40),
       ]);
       logger.info({ sessionName: this.sessionName }, "tmux session created");
     } catch (error: unknown) {
@@ -243,9 +247,9 @@ export class TmuxManager {
    */
   async attachSession(): Promise<void> {
     this.assertNotDisposed();
-    this.assertSession();
+    const sessionName = this.requireSessionName();
 
-    await execa(TMUX_BINARY, ["attach-session", "-t", this.sessionName!], {
+    await execa(TMUX_BINARY, ["attach-session", "-t", sessionName], {
       stdio: "inherit",
     });
   }
@@ -300,12 +304,13 @@ export class TmuxManager {
   // ── Private Helpers ─────────────────────────────────────────────────
 
   private async splitPane(geometry: IPaneGeometry): Promise<string> {
+    const sessionName = this.requireSessionName();
     const splitFlag = geometry.splitDirection === "horizontal" ? "-h" : "-v";
 
     const result = await execa(TMUX_BINARY, [
       "split-window",
       splitFlag,
-      "-t", this.sessionName!,
+      "-t", sessionName,
       "-P",
       "-F", "#{pane_id}",
     ]);
@@ -319,9 +324,10 @@ export class TmuxManager {
   }
 
   private async getFirstPaneId(): Promise<string> {
+    const sessionName = this.requireSessionName();
     const result = await execa(TMUX_BINARY, [
       "list-panes",
-      "-t", this.sessionName!,
+      "-t", sessionName,
       "-F", "#{pane_id}",
     ]);
     const firstLine = result.stdout.trim().split("\n")[0];
@@ -359,5 +365,12 @@ export class TmuxManager {
     if (!this.sessionName) {
       throw new AgentSpawnError("tmux", "No active tmux session. Call createSession() first.");
     }
+  }
+
+  private requireSessionName(): string {
+    if (!this.sessionName) {
+      throw new AgentSpawnError("tmux", "No active tmux session. Call createSession() first.");
+    }
+    return this.sessionName;
   }
 }

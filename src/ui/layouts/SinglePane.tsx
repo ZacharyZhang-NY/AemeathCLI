@@ -1,13 +1,18 @@
 /**
- * Default single-pane layout per PRD section 6.2
+ * Default single-pane layout with animated welcome screen,
+ * streaming content display, and thinking indicator.
  */
 
-import React from "react";
+import React, { useRef } from "react";
 import { Box, Text } from "ink";
 import { MessageView } from "../components/MessageView.js";
 import { InputBar } from "../components/InputBar.js";
 import { StatusBar } from "../components/StatusBar.js";
-import { Spinner } from "../components/Spinner.js";
+import { ThinkingIndicator } from "../components/ThinkingIndicator.js";
+import { WelcomeScreen } from "../components/WelcomeScreen.js";
+import { MarkdownContent } from "../components/MarkdownContent.js";
+import { colors } from "../theme.js";
+import type { InputMode } from "../components/InputBar.js";
 import type { IChatMessage } from "../../types/index.js";
 
 interface ISinglePaneProps {
@@ -22,11 +27,13 @@ interface ISinglePaneProps {
   readonly gitBranch?: string | undefined;
   readonly gitChanges?: number | undefined;
   readonly streamingContent?: string | undefined;
-  /** Current tool activity label (e.g. "Reading src/foo.ts"). */
   readonly activity?: string | undefined;
+  readonly initialHistory?: readonly string[] | undefined;
+  readonly mode?: InputMode | undefined;
+  readonly onModeChange?: ((mode: InputMode) => void) | undefined;
 }
 
-/** Shorten model ID for display: "claude-sonnet-4-6" → "Sonnet 4.6" */
+/** Shorten model ID for display */
 function shortModelName(model: string): string {
   if (model.includes("opus")) return "Opus 4.6";
   if (model.includes("sonnet")) return "Sonnet 4.6";
@@ -60,7 +67,20 @@ export function SinglePane({
   gitChanges,
   streamingContent,
   activity,
+  initialHistory,
+  mode,
+  onModeChange,
 }: ISinglePaneProps): React.ReactElement {
+  // Track when processing started for elapsed time display
+  const processingStartRef = useRef<number | undefined>(undefined);
+  if (isProcessing && processingStartRef.current === undefined) {
+    processingStartRef.current = Date.now();
+  } else if (!isProcessing) {
+    processingStartRef.current = undefined;
+  }
+
+  const hasContent = streamingContent !== undefined && streamingContent.length > 0;
+
   return (
     <Box flexDirection="column" height="100%">
       <StatusBar
@@ -71,43 +91,50 @@ export function SinglePane({
         gitBranch={gitBranch}
         gitChanges={gitChanges}
       />
+
       {messages.length === 0 && !isProcessing ? (
-        <Box flexDirection="column" flexGrow={1} paddingX={2} justifyContent="center">
-          <Text color="cyan" bold>{"\u2726"} AemeathCLI</Text>
-          <Text color="gray">Multi-model AI coding assistant</Text>
-          <Text>{" "}</Text>
-          <Text color="gray">Type a message to start, or use /help for commands.</Text>
-          <Text color="gray">Press Tab for autocomplete on /commands, @context, and $skills.</Text>
-        </Box>
+        /* ── Welcome screen ────────────────────────────────── */
+        <WelcomeScreen version="1.0.10" />
       ) : (
         <>
           <MessageView messages={messages} />
+
           {isProcessing ? (
             <Box flexDirection="column" marginLeft={1} marginBottom={1}>
-              <Box>
-                <Text color="cyan" bold>
-                  {"\u2726"} {shortModelName(model)}
-                </Text>
-              </Box>
-              <Box marginLeft={2} marginBottom={1}>
-                <Text wrap="wrap">{streamingContent && streamingContent.length > 0 ? tailLines(streamingContent, 12) : ""}</Text>
-              </Box>
-              <Box marginLeft={1}>
-                <Spinner
-                  label={
-                    activity
-                      ? activity
-                      : streamingContent && streamingContent.length > 0
-                        ? "Streaming response..."
-                        : "Thinking..."
-                  }
-                />
-              </Box>
+              {/* Streaming content preview */}
+              {hasContent ? (
+                <Box flexDirection="column" marginLeft={2} marginBottom={1}>
+                  <Box>
+                    <Text color={colors.role.assistant} bold>
+                      {"\u2726"} {shortModelName(model)}
+                    </Text>
+                  </Box>
+                  <Box marginLeft={2}>
+                    <MarkdownContent content={tailLines(streamingContent, 12)} />
+                  </Box>
+                </Box>
+              ) : null}
+
+              {/* Thinking indicator with elapsed time */}
+              <ThinkingIndicator
+                activity={activity}
+                isStreaming={hasContent}
+                modelName={hasContent ? undefined : shortModelName(model)}
+                startTime={processingStartRef.current}
+              />
             </Box>
           ) : null}
         </>
       )}
-      <InputBar onSubmit={onSubmit} isProcessing={isProcessing} onCancel={onCancel} />
+
+      <InputBar
+        onSubmit={onSubmit}
+        isProcessing={isProcessing}
+        onCancel={onCancel}
+        initialHistory={initialHistory}
+        mode={mode}
+        onModeChange={onModeChange}
+      />
     </Box>
   );
 }
