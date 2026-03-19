@@ -533,8 +533,6 @@ aemeathcli/
     utils/         Logger, sanitizer, path resolver, retry, token counter
 ```
 
-**99 source files** &middot; **~14,000 lines of TypeScript** &middot; **Zero `any` types** &middot; **Strict mode + all strict flags**
-
 ### Technology Stack
 
 | Layer | Technology |
