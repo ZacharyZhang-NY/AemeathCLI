@@ -3,23 +3,37 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AemeathCLI - Next-Generation Multi-Model CLI Coding Tool</title>
-    <meta name="description" content="The first CLI tool with true multi-model orchestration. Assign Claude for planning, GPT for coding, Gemini for reviews — all coordinated in split-panel terminal panes.">
-    <meta name="theme-color" content="#050505">
+    <title>AemeathCLI — World's First Native Split-Panel CLI</title>
+    <meta name="description" content="The world's first CLI tool with native Windows Terminal split panel support. Orchestrate Claude, GPT, and Gemini agents in parallel terminal panes.">
+    <meta name="theme-color" content="#0d0a0b" media="(prefers-color-scheme: dark)">
+    <meta name="theme-color" content="#faf7f8" media="(prefers-color-scheme: light)">
     <meta name="robots" content="index, follow">
     <link rel="canonical" href="https://aemeathcli.pages.dev">
 
     <meta property="og:type" content="website">
-    <meta property="og:title" content="AemeathCLI - Multi-Model CLI Coding Tool">
-    <meta property="og:description" content="The first CLI tool with true multi-model orchestration. Assign Claude for planning, GPT for coding, Gemini for reviews — all in split-panel terminal panes.">
+    <meta property="og:title" content="AemeathCLI — World's First Native Split-Panel CLI">
+    <meta property="og:description" content="The world's first CLI tool with native Windows Terminal split panel support. Run AI agents in parallel terminal panes.">
     <meta property="og:url" content="https://aemeathcli.pages.dev">
     <meta property="og:site_name" content="AemeathCLI">
 
     <meta name="twitter:card" content="summary">
-    <meta name="twitter:title" content="AemeathCLI - Multi-Model CLI Coding Tool">
-    <meta name="twitter:description" content="The first CLI tool with true multi-model orchestration — split-panel agent teams in your terminal.">
+    <meta name="twitter:title" content="AemeathCLI — Native Split-Panel CLI">
+    <meta name="twitter:description" content="The world's first CLI tool with native Windows Terminal split panel support.">
 
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#9670;</text></svg>">
+
+    <!-- Prevent FOUC: set theme before paint -->
+    <script>
+        (function() {
+            var t = localStorage.getItem('aemeath-theme');
+            if (!t) t = window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+            document.documentElement.setAttribute('data-theme', t);
+        })();
+    </script>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
 
     <script type="application/ld+json">
     {
@@ -28,51 +42,98 @@
         "name": "AemeathCLI",
         "applicationCategory": "DeveloperApplication",
         "operatingSystem": "macOS, Linux, Windows",
-        "description": "Next-generation multi-model CLI coding tool with agent teams, split-panel coordination, and role-based model routing.",
-        "offers": {
-            "@type": "Offer",
-            "price": "0",
-            "priceCurrency": "USD"
-        },
+        "description": "World's first CLI tool with native Windows Terminal split panel support and multi-model agent orchestration.",
+        "url": "https://github.com/ZacharyZhang-NY/AemeathCLI",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
         "license": "https://opensource.org/licenses/MIT"
     }
     </script>
 
     <style>
-        :root {
-            --bg-root: #050505;
-            --bg-panel: #0a0a0a;
-            --border-dim: #262626;
-            --border-active: #404040;
-            --text-primary: #ededed;
-            --text-secondary: #888888;
-            --text-muted: #767676;
-            --accent-diff-bg: rgba(16, 185, 129, 0.1);
-            --accent-diff-text: #34d399;
-            --syntax-function: #60a5fa;
-            --syntax-keyword: #c084fc;
-            --syntax-string: #a5b4fc;
-            --space-unit: 1.5rem;
+        /* ===========================================
+           DARK THEME (default) — aligned to CLI theme.ts
+           =========================================== */
+        :root, [data-theme="dark"] {
+            --bg-root: #0d0a0b;
+            --bg-panel: #141011;
+            --border-dim: #2d2426;
+            --border-active: #6b5459;
+            --text-primary: #F9F5F5;
+            --text-secondary: #d3acb3;
+            --text-muted: #9e8085;
+            --accent: #F0C5DA;
+            --accent-dim: rgba(240, 197, 218, 0.07);
+            --accent-hover: #f5d8e7;
+
+            /* Terminal — always dark */
+            --t-bg: #080607;
+            --t-text: #F9F5F5;
+            --t-muted: #9e8085;
+            --t-accent: #F0C5DA;
+            --t-secondary: #d3acb3;
+            --t-string: #EDD6DC;
+            --t-diff: rgba(240, 197, 218, 0.07);
+            --t-border: #2d2426;
+
+            /* Layout tokens */
+            --space: 2rem;
             --grid-line: 1px solid var(--border-dim);
-            --bg-terminal: #000;
-            --mono-font: 'SF Mono', 'Fira Code', 'Roboto Mono', 'Cascadia Code', 'JetBrains Mono', ui-monospace, monospace;
+            --font-display: 'Space Grotesk', system-ui, -apple-system, sans-serif;
+            --font-mono: 'SF Mono', 'Fira Code', 'Cascadia Code', 'JetBrains Mono', ui-monospace, monospace;
         }
 
-        * {
+        /* ===========================================
+           LIGHT THEME
+           =========================================== */
+        [data-theme="light"] {
+            --bg-root: #faf7f8;
+            --bg-panel: #f2eced;
+            --border-dim: #e4dadd;
+            --border-active: #d3acb3;
+            --text-primary: #1a1517;
+            --text-secondary: #6b5459;
+            --text-muted: #9e8085;
+            --accent: #b5688a;
+            --accent-dim: rgba(181, 104, 138, 0.06);
+            --accent-hover: #a05577;
+        }
+
+        /* System pref fallback (JS disabled) */
+        @media (prefers-color-scheme: light) {
+            :root:not([data-theme]) {
+                --bg-root: #faf7f8;
+                --bg-panel: #f2eced;
+                --border-dim: #e4dadd;
+                --border-active: #d3acb3;
+                --text-primary: #1a1517;
+                --text-secondary: #6b5459;
+                --text-muted: #9e8085;
+                --accent: #b5688a;
+                --accent-dim: rgba(181, 104, 138, 0.06);
+                --accent-hover: #a05577;
+            }
+        }
+
+        /* ===========================================
+           BASE RESET
+           =========================================== */
+        *, *::before, *::after {
             box-sizing: border-box;
             margin: 0;
             padding: 0;
+        }
+
+        html {
+            scroll-behavior: smooth;
             -webkit-font-smoothing: antialiased;
             -moz-osx-font-smoothing: grayscale;
         }
 
-        html { scroll-behavior: smooth; }
-
         body {
-            background-color: var(--bg-root);
+            background: var(--bg-root);
             color: var(--text-primary);
-            font-family: var(--mono-font);
-            font-size: 14px;
+            font-family: var(--font-display);
+            font-size: 15px;
             line-height: 1.6;
             overflow-x: hidden;
             display: flex;
@@ -80,20 +141,23 @@
             min-height: 100vh;
         }
 
-        .text-sec { color: var(--text-secondary); }
-        .text-mut { color: var(--text-muted); }
+        img { max-width: 100%; height: auto; }
 
-        /* -- Main Layout -- */
+        /* ===========================================
+           LAYOUT
+           =========================================== */
         .main-grid {
             display: grid;
-            grid-template-columns: 280px 1fr;
+            grid-template-columns: 260px 1fr;
             flex: 1;
         }
 
-        /* -- Sidebar -- */
+        /* ===========================================
+           SIDEBAR
+           =========================================== */
         .sidebar {
             border-right: var(--grid-line);
-            padding: var(--space-unit);
+            padding: var(--space);
             display: flex;
             flex-direction: column;
             justify-content: space-between;
@@ -103,50 +167,78 @@
         }
 
         .brand, .mobile-brand {
-            font-size: 16px;
-            font-weight: 700;
+            font-size: 15px;
+            font-weight: 600;
             display: flex;
             align-items: center;
             gap: 0.5rem;
+            letter-spacing: -0.01em;
         }
 
-        .brand {
-            margin-bottom: 2rem;
-        }
+        .brand { margin-bottom: 2.5rem; }
+        .brand-icon { color: var(--accent); }
 
-        .brand-icon { color: var(--accent-diff-text); }
         .nav-list { list-style: none; }
 
         .nav-item {
             display: block;
             color: var(--text-secondary);
             text-decoration: none;
-            padding: 8px 0;
+            padding: 7px 0;
+            font-size: 14px;
+            font-family: var(--font-mono);
             transition: color 0.2s;
             cursor: pointer;
         }
 
         .nav-item:hover { color: var(--text-primary); }
-        .nav-item.active { color: var(--accent-diff-text); }
+        .nav-item.active { color: var(--accent); }
+
         .nav-item::before {
             content: '> ';
             opacity: 0;
-            transition: opacity 0.2s;
-            color: var(--accent-diff-text);
+            transition: opacity 0.15s;
+            color: var(--accent);
         }
         .nav-item:hover::before,
         .nav-item:focus-visible::before { opacity: 1; }
+
         .nav-item:focus-visible,
         .hamburger:focus-visible,
-        .mobile-nav-close:focus-visible {
-            outline: 2px solid var(--accent-diff-text);
+        .mobile-nav-close:focus-visible,
+        [data-theme-toggle]:focus-visible,
+        .copy-btn:focus-visible {
+            outline: 2px solid var(--accent);
             outline-offset: 2px;
         }
 
-        .sidebar-footer { color: var(--text-muted); font-size: 12px; }
-        .sidebar-footer div + div { margin-top: 8px; }
+        .sidebar-footer {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
 
-        /* -- Mobile Header -- */
+        /* Theme toggle */
+        [data-theme-toggle] {
+            background: none;
+            border: var(--grid-line);
+            color: var(--text-muted);
+            font-family: var(--font-mono);
+            font-size: 12px;
+            padding: 8px 12px;
+            cursor: pointer;
+            transition: color 0.2s, border-color 0.2s;
+            text-align: left;
+        }
+
+        [data-theme-toggle]:hover {
+            color: var(--text-primary);
+            border-color: var(--border-active);
+        }
+
+        /* ===========================================
+           MOBILE HEADER
+           =========================================== */
         .mobile-header {
             display: none;
             position: sticky;
@@ -154,36 +246,37 @@
             z-index: 100;
             background: var(--bg-root);
             border-bottom: var(--grid-line);
-            padding: 12px var(--space-unit);
+            padding: 10px var(--space);
             align-items: center;
             justify-content: space-between;
         }
 
+        .mobile-right {
+            display: flex;
+            gap: 6px;
+            align-items: center;
+        }
 
         .hamburger {
             background: none;
             border: var(--grid-line);
             color: var(--text-secondary);
-            padding: 14px 16px;
-            min-height: 48px;
+            padding: 10px 14px;
+            min-height: 44px;
             cursor: pointer;
-            font-family: var(--mono-font);
-            font-size: 14px;
+            font-family: var(--font-mono);
+            font-size: 13px;
             transition: color 0.2s, border-color 0.2s;
         }
 
-        .hamburger:hover,
-        .hamburger:focus-visible {
-            color: var(--text-primary);
-            border-color: var(--border-active);
-        }
+        .hamburger:hover { color: var(--text-primary); border-color: var(--border-active); }
 
         .mobile-nav-overlay {
             display: none;
             position: fixed;
             inset: 0;
             z-index: 200;
-            background: rgba(0, 0, 0, 0.8);
+            background: rgba(0, 0, 0, 0.55);
         }
 
         .mobile-nav-overlay.open { display: block; }
@@ -196,13 +289,13 @@
             height: 100vh;
             background: var(--bg-root);
             border-right: var(--grid-line);
-            padding: var(--space-unit);
+            padding: var(--space);
             z-index: 201;
             display: flex;
             flex-direction: column;
             gap: 2rem;
             transform: translateX(-100%);
-            transition: transform 0.3s ease;
+            transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
         }
 
         .mobile-nav-overlay.open .mobile-nav { transform: translateX(0); }
@@ -211,300 +304,371 @@
             background: none;
             border: none;
             color: var(--text-muted);
-            font-family: var(--mono-font);
+            font-family: var(--font-mono);
             font-size: 14px;
             cursor: pointer;
             align-self: flex-end;
             padding: 12px;
-            min-height: 48px;
-            min-width: 48px;
+            min-height: 44px;
+            min-width: 44px;
         }
 
         .mobile-nav-close:hover { color: var(--text-primary); }
+        .mobile-nav .nav-item { font-size: 15px; padding: 14px 0; }
 
-        .mobile-nav .nav-item { font-size: 16px; padding: 16px 0; }
+        /* ===========================================
+           CONTENT
+           =========================================== */
+        .content-area { display: flex; flex-direction: column; }
 
-        /* -- Content Area -- */
-        .content-area {
-            display: flex;
-            flex-direction: column;
-        }
-
-        /* -- Hero Section -- */
+        /* ===========================================
+           HERO
+           =========================================== */
         .hero {
-            padding: 4rem var(--space-unit);
+            padding: 5rem var(--space) 4rem;
             border-bottom: var(--grid-line);
         }
 
-        .status-line {
-            font-size: 12px;
-            color: var(--text-muted);
-            margin-bottom: 2rem;
-            display: flex;
-            gap: 1rem;
-        }
-
         h1 {
-            font-size: clamp(2rem, 4vw, 3.5rem);
-            line-height: 1.1;
-            margin-bottom: 1rem;
-            max-width: 800px;
-            font-weight: 500;
+            font-family: var(--font-display);
+            font-size: clamp(1.9rem, 4.2vw, 3.4rem);
+            line-height: 1.08;
+            margin-bottom: 1.5rem;
+            max-width: 840px;
+            font-weight: 700;
+            letter-spacing: -0.035em;
         }
 
-        .hero-sub { color: var(--text-secondary); }
-
-        .hero-desc {
-            color: var(--text-secondary);
-            font-size: 14px;
-            max-width: 640px;
-            margin-bottom: 2rem;
-        }
+        .hero-accent { color: var(--accent); }
 
         .hero-cursor {
             display: inline-block;
-            width: 0.6em;
-            height: 1em;
-            background-color: var(--accent-diff-text);
+            width: 3px;
+            height: 0.82em;
+            background: var(--accent);
             animation: blink 1s step-end infinite;
             vertical-align: middle;
+            margin-left: 4px;
         }
 
         @keyframes blink { 50% { opacity: 0; } }
 
-        /* -- Install Box (in hero) -- */
-        .install-box {
-            display: flex;
-            align-items: center;
-            border: var(--grid-line);
-            background: var(--bg-terminal);
-            max-width: 500px;
-            margin-bottom: 3rem;
-            transition: border-color 0.2s;
+        .hero-desc {
+            color: var(--text-secondary);
+            font-size: 15px;
+            max-width: 560px;
+            margin-bottom: 2.5rem;
+            line-height: 1.7;
         }
 
-        .install-box:focus-within { border-color: var(--text-secondary); }
+        /* Install box */
+        .install-box {
+            display: inline-flex;
+            align-items: center;
+            border: 1px solid var(--t-border);
+            background: var(--t-bg);
+            margin-bottom: 3rem;
+        }
+
+        .install-box:focus-within { border-color: var(--t-accent); }
 
         .prompt-arrow {
-            padding: 16px;
-            color: var(--text-muted);
-            border-right: var(--grid-line);
+            padding: 13px 16px;
+            color: var(--t-muted);
+            border-right: 1px solid var(--t-border);
             user-select: none;
+            font-family: var(--font-mono);
+            font-size: 14px;
         }
 
         .install-input {
             background: transparent;
             border: none;
-            color: var(--text-primary);
-            font-family: var(--mono-font);
+            color: var(--t-text);
+            font-family: var(--font-mono);
             font-size: 14px;
-            padding: 16px;
-            width: 100%;
+            padding: 13px 16px;
+            width: 260px;
             outline: none;
         }
 
         .copy-btn {
             padding: 0 16px;
-            color: var(--text-muted);
+            color: var(--t-muted);
             font-size: 12px;
             cursor: pointer;
             transition: color 0.2s;
             background: none;
             border: none;
-            border-left: var(--grid-line);
-            font-family: var(--mono-font);
+            border-left: 1px solid var(--t-border);
+            font-family: var(--font-mono);
             white-space: nowrap;
-            min-height: 48px;
+            min-height: 44px;
         }
 
-        .copy-btn:hover,
-        .copy-btn:focus-visible { color: var(--text-primary); }
-        .copy-btn:focus-visible {
-            outline: 2px solid var(--accent-diff-text);
-            outline-offset: -2px;
-        }
+        .copy-btn:hover { color: var(--t-text); }
 
-        /* -- Terminal Window -- */
+        /* Terminal window */
         .terminal-window {
-            border: var(--grid-line);
-            background: var(--bg-terminal);
+            border: 1px solid var(--t-border);
+            background: var(--t-bg);
+            max-width: 680px;
         }
 
         .terminal-header {
             padding: 10px 16px;
-            border-bottom: var(--grid-line);
+            border-bottom: 1px solid var(--t-border);
             display: flex;
             justify-content: space-between;
             font-size: 12px;
-            color: var(--text-muted);
+            color: var(--t-muted);
+            font-family: var(--font-mono);
         }
 
         .code-block {
-            padding: 20px 0;
-            font-family: var(--mono-font);
+            padding: 14px 0;
+            font-family: var(--font-mono);
             font-size: 13px;
-            position: relative;
             overflow-x: auto;
         }
 
         .line {
             display: grid;
-            grid-template-columns: 60px 1fr;
-            line-height: 1.6;
+            grid-template-columns: 52px 1fr;
+            line-height: 1.7;
             transition: background-color 0.15s;
         }
 
         .ln {
             text-align: right;
-            padding-right: 20px;
-            color: var(--text-muted);
+            padding-right: 18px;
+            color: var(--t-muted);
             user-select: none;
             position: relative;
         }
 
-        .code { color: var(--text-secondary); white-space: pre; }
+        .code { color: var(--t-secondary); white-space: pre; }
 
-        .line.add { background-color: var(--accent-diff-bg); }
-        .line.add .code { color: var(--text-primary); }
-        .line.add .ln { color: var(--accent-diff-text); }
+        .line.add { background: var(--t-diff); }
+        .line.add .code { color: var(--t-text); }
+        .line.add .ln { color: var(--t-accent); }
         .line.add .ln::before {
             content: '+';
             position: absolute;
-            left: 12px;
-            color: var(--accent-diff-text);
+            left: 8px;
+            color: var(--t-accent);
         }
 
-        .line:hover { background-color: rgba(255, 255, 255, 0.03); }
-        .line.add:hover { background-color: rgba(16, 185, 129, 0.15); }
+        .line:hover { background: rgba(249, 245, 245, 0.02); }
+        .line.add:hover { background: rgba(240, 197, 218, 0.11); }
 
-        .kwd { color: var(--syntax-keyword); }
-        .str { color: var(--syntax-string); }
-        .fn, .tag { color: var(--syntax-function); }
-        .attr { color: var(--text-secondary); }
+        .kwd { color: var(--t-accent); }
+        .str { color: var(--t-string); }
+        .fn { color: var(--t-text); }
+        .attr { color: var(--t-secondary); }
 
-        /* -- Features Grid -- */
-        .features-grid {
+        /* ===========================================
+           Z-FEATURES
+           =========================================== */
+        .z-features { border-bottom: var(--grid-line); }
+
+        .z-row {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-        }
-
-        .feature-cell {
-            border-right: var(--grid-line);
+            grid-template-columns: 5fr 7fr;
+            gap: clamp(2rem, 4vw, 4rem);
+            padding: clamp(2.5rem, 4vw, 4.5rem) var(--space);
             border-bottom: var(--grid-line);
-            padding: 2rem;
-            transition: background 0.2s;
+            align-items: center;
         }
 
-        .feature-cell:hover { background: var(--bg-panel); }
+        .z-row:last-child { border-bottom: none; }
 
-        .feature-header {
-            font-size: 12px;
-            color: var(--text-muted);
+        .z-row--reversed { grid-template-columns: 7fr 5fr; }
+        .z-row--reversed .z-content { order: 2; }
+        .z-row--reversed .z-image { order: 1; }
+
+        .z-label {
+            display: block;
+            font-family: var(--font-mono);
+            font-size: 11px;
+            color: var(--accent);
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
             margin-bottom: 1rem;
-            display: flex;
-            justify-content: space-between;
         }
 
-        .feature-title {
-            font-size: 16px;
-            margin-bottom: 0.5rem;
-            color: var(--text-primary);
+        .z-title {
+            font-family: var(--font-display);
+            font-size: clamp(1.2rem, 2.2vw, 1.65rem);
+            font-weight: 600;
+            letter-spacing: -0.025em;
+            line-height: 1.2;
+            margin-bottom: 0.875rem;
         }
 
-        .feature-desc {
+        .z-desc {
             color: var(--text-secondary);
-            font-size: 13px;
-            max-width: 90%;
+            font-size: 14px;
+            line-height: 1.75;
+            max-width: 400px;
         }
 
-        /* -- Demo Section -- */
+        .z-image img {
+            display: block;
+            border: 1px solid var(--border-dim);
+            transition: border-color 0.3s;
+        }
+
+        .z-image:hover img { border-color: var(--accent); }
+
+        /* ===========================================
+           AGENT TEAMS DEMO
+           =========================================== */
         .demo-section {
-            padding: 4rem var(--space-unit);
+            padding: clamp(2.5rem, 4vw, 4.5rem) var(--space);
             border-bottom: var(--grid-line);
+        }
+
+        .section-label {
+            font-family: var(--font-mono);
+            font-size: 11px;
+            color: var(--accent);
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            margin-bottom: 1.5rem;
         }
 
         .demo-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-            gap: 2rem;
+            grid-template-columns: 1fr 1fr;
+            gap: 3rem;
         }
 
         .demo-title {
-            font-size: 16px;
-            margin-bottom: 1.5rem;
-            color: var(--text-primary);
+            font-family: var(--font-display);
+            font-size: clamp(1.2rem, 2.2vw, 1.65rem);
+            font-weight: 600;
+            letter-spacing: -0.025em;
+            margin-bottom: 0.875rem;
         }
 
         .demo-desc {
             color: var(--text-secondary);
             margin-bottom: 2rem;
+            font-size: 14px;
+            line-height: 1.75;
         }
 
         .command-list { border-top: var(--grid-line); }
 
         .command-item {
-            padding: 1rem 0;
+            padding: 0.8rem 0;
             border-bottom: var(--grid-line);
             display: flex;
-            gap: 1rem;
+            gap: 0.75rem;
             align-items: center;
+            font-size: 13px;
+            font-family: var(--font-mono);
+            color: var(--text-secondary);
         }
 
-        .command-prompt { color: var(--accent-diff-text); }
+        .command-prompt { color: var(--accent); }
 
         .terminal-output {
-            border: var(--grid-line);
-            background: var(--bg-terminal);
+            border: 1px solid var(--t-border);
+            background: var(--t-bg);
             padding: 1.5rem;
         }
 
         .terminal-label {
-            margin-bottom: 1rem;
-            color: var(--text-muted);
+            margin-bottom: 0.875rem;
+            color: var(--t-muted);
             font-size: 12px;
+            font-family: var(--font-mono);
         }
 
         .terminal-content {
             font-size: 13px;
-            color: var(--text-secondary);
+            font-family: var(--font-mono);
+            color: var(--t-secondary);
         }
 
-        .terminal-content > div + div { margin-top: 0.25rem; }
-        .terminal-highlight { color: var(--accent-diff-text); }
-        .terminal-strong { color: var(--text-primary); margin-top: 1rem; }
+        .terminal-content > div + div { margin-top: 0.2rem; }
+        .terminal-highlight { color: var(--t-accent); }
+        .terminal-strong { color: var(--t-text); margin-top: 0.6rem; }
         .terminal-indent { padding-left: 1rem; }
+        .terminal-prompt-line { margin-top: 0.6rem; }
+        .terminal-dim { color: var(--t-muted); }
 
-        .terminal-prompt-line { margin-top: 1rem; }
-
-        /* -- Footer / Shortcuts Bar -- */
+        /* ===========================================
+           FOOTER
+           =========================================== */
         .shortcuts-bar {
-            padding: 1rem var(--space-unit);
+            padding: 0.875rem var(--space);
             border-top: var(--grid-line);
             display: flex;
             justify-content: space-between;
+            align-items: center;
             font-size: 12px;
+            font-family: var(--font-mono);
             color: var(--text-muted);
             background: var(--bg-root);
             margin-top: auto;
         }
 
         .key-group { display: flex; gap: 1.5rem; }
-        .key { color: var(--text-primary); margin-right: 4px; }
 
-        /* -- Scroll Reveal -- */
+        .key-group a {
+            color: var(--text-muted);
+            text-decoration: none;
+            transition: color 0.2s;
+        }
+        .key-group a:hover { color: var(--text-primary); }
+
+        .key {
+            display: inline-block;
+            color: var(--text-primary);
+            margin-right: 4px;
+            border: 1px solid var(--border-dim);
+            padding: 1px 5px;
+            font-size: 11px;
+            border-radius: 2px;
+        }
+
+        /* ===========================================
+           SCROLL REVEAL
+           =========================================== */
         .reveal {
             opacity: 0;
             transform: translateY(20px);
-            transition: opacity 0.6s ease, transform 0.6s ease;
+            transition: opacity 0.65s cubic-bezier(0.16, 1, 0.3, 1),
+                        transform 0.65s cubic-bezier(0.16, 1, 0.3, 1);
         }
 
         .reveal.visible { opacity: 1; transform: translateY(0); }
-        .reveal-delay-1 { transition-delay: 0.1s; }
-        .reveal-delay-2 { transition-delay: 0.2s; }
-        .reveal-delay-3 { transition-delay: 0.3s; }
-        .reveal-delay-4 { transition-delay: 0.4s; }
-        .reveal-delay-5 { transition-delay: 0.5s; }
+        .reveal-d1 { transition-delay: 0.12s; }
+        .reveal-d2 { transition-delay: 0.24s; }
 
+        /* Theme transition class */
+        .theme-switching,
+        .theme-switching *,
+        .theme-switching *::before,
+        .theme-switching *::after {
+            transition: background-color 0.35s ease, color 0.35s ease, border-color 0.35s ease !important;
+        }
+        /* Don't transition terminal elements */
+        .theme-switching .terminal-window,
+        .theme-switching .terminal-window *,
+        .theme-switching .terminal-output,
+        .theme-switching .terminal-output *,
+        .theme-switching .install-box,
+        .theme-switching .install-box * {
+            transition: none !important;
+        }
+
+        /* ===========================================
+           UTILITIES
+           =========================================== */
         .sr-only {
             position: absolute;
             width: 1px;
@@ -519,43 +683,55 @@
             position: absolute;
             top: -100%;
             left: 0;
-            background: var(--accent-diff-text);
-            color: #000;
+            background: var(--accent);
+            color: #0d0a0b;
             padding: 8px 16px;
             z-index: 300;
-            font-family: var(--mono-font);
+            font-family: var(--font-mono);
             text-decoration: none;
+            font-size: 13px;
         }
-
         .skip-link:focus { top: 0; }
 
-        /* -- Responsive -- */
+        /* ===========================================
+           RESPONSIVE
+           =========================================== */
         @media (max-width: 1024px) {
             .main-grid { grid-template-columns: 1fr; }
             .sidebar { display: none; }
             .mobile-header { display: flex; }
-            .hero { padding: 3rem var(--space-unit); }
-            h1 { font-size: clamp(1.5rem, 5vw, 2.5rem); }
-            .features-grid { grid-template-columns: 1fr; }
-            .feature-cell { border-right: none; }
+            .hero { padding: 3rem var(--space) 2.5rem; }
+            h1 { font-size: clamp(1.5rem, 5.5vw, 2.5rem); }
+
+            .z-row, .z-row--reversed {
+                grid-template-columns: 1fr;
+                gap: 1.5rem;
+            }
+            .z-row--reversed .z-content { order: 1; }
+            .z-row--reversed .z-image { order: 2; }
+
             .demo-grid { grid-template-columns: 1fr; }
-            .install-box { max-width: 100%; }
-            .shortcuts-bar { flex-direction: column; gap: 0.5rem; }
-            .line { grid-template-columns: 40px 1fr; }
-            .line.add .ln::before { left: 4px; }
+            .shortcuts-bar { flex-direction: column; gap: 0.5rem; align-items: flex-start; }
         }
 
         @media (max-width: 480px) {
-            :root { --space-unit: 1rem; }
-            .hero { padding: 2rem var(--space-unit); }
+            :root { --space: 1.25rem; }
+            .hero { padding: 2rem var(--space) 1.75rem; }
             .code-block { font-size: 11px; }
-            .feature-cell { padding: 1.5rem; }
+            .line { grid-template-columns: 38px 1fr; }
+            .line.add .ln::before { left: 3px; }
+            .z-row { padding: 2rem var(--space); }
+            .install-input { width: 200px; }
         }
 
         @media (prefers-reduced-motion: reduce) {
             html { scroll-behavior: auto; }
             .hero-cursor { animation: none; opacity: 1; }
             .reveal { opacity: 1; transform: none; transition: none; }
+            .mobile-nav { transition: none; }
+            .theme-switching, .theme-switching *, .theme-switching *::before, .theme-switching *::after {
+                transition: none !important;
+            }
         }
     </style>
 </head>
@@ -567,19 +743,22 @@
         <div class="mobile-brand">
             <span class="brand-icon" aria-hidden="true">&#9670;</span> AemeathCLI
         </div>
-        <button class="hamburger" aria-label="Open navigation menu" aria-expanded="false" aria-controls="mobile-nav-overlay">[=]</button>
+        <div class="mobile-right">
+            <button data-theme-toggle="compact" aria-label="Toggle theme">&#9680;</button>
+            <button class="hamburger" aria-label="Open navigation" aria-expanded="false" aria-controls="mobile-nav-overlay">[=]</button>
+        </div>
     </header>
 
-    <!-- Mobile Navigation Overlay -->
-    <div id="mobile-nav-overlay" class="mobile-nav-overlay" role="dialog" aria-modal="true" aria-label="Navigation menu">
+    <!-- Mobile Navigation -->
+    <div id="mobile-nav-overlay" class="mobile-nav-overlay" role="dialog" aria-modal="true" aria-label="Navigation">
         <div class="mobile-nav">
-            <button class="mobile-nav-close" aria-label="Close navigation menu">[x]</button>
-            <nav aria-label="Mobile navigation">
+            <button class="mobile-nav-close" aria-label="Close navigation">[x]</button>
+            <nav>
                 <ul class="nav-list">
                     <li><a href="#overview" class="nav-item active">1. Overview</a></li>
                     <li><a href="#features" class="nav-item">2. Features</a></li>
                     <li><a href="#teams" class="nav-item">3. Agent Teams</a></li>
-                    <li><a href="https://github.com/ZacharyZhang-NY/AemeathCLI" class="nav-item" rel="noopener">4. Documentation</a></li>
+                    <li><a href="https://github.com/ZacharyZhang-NY/AemeathCLI" class="nav-item" rel="noopener" target="_blank">4. GitHub</a></li>
                 </ul>
             </nav>
         </div>
@@ -597,51 +776,42 @@
                         <li><a href="#overview" class="nav-item active">1. Overview</a></li>
                         <li><a href="#features" class="nav-item">2. Features</a></li>
                         <li><a href="#teams" class="nav-item">3. Agent Teams</a></li>
-                        <li><a href="https://github.com/ZacharyZhang-NY/AemeathCLI" class="nav-item" rel="noopener">4. Documentation</a></li>
+                        <li><a href="https://github.com/ZacharyZhang-NY/AemeathCLI" class="nav-item" rel="noopener" target="_blank">4. GitHub</a></li>
                     </ul>
                 </nav>
             </div>
             <div class="sidebar-footer">
-                <div>v1.0.10 stable</div>
-                <div>Waiting for input...</div>
+                <button data-theme-toggle="full" aria-label="Toggle theme"></button>
             </div>
         </aside>
 
         <!-- Main Content -->
         <main id="main-content" class="content-area">
 
-            <!-- Hero Section -->
+            <!-- =================== HERO =================== -->
             <section id="overview" class="hero" aria-label="Product overview">
-                <div class="status-line">
-                    <span>5 providers</span>
-                    <span>9 models</span>
-                    <span>v1.0.10</span>
-                </div>
-
                 <h1>
-                    THE RIGHT MODEL<br>
-                    <span class="hero-sub">FOR EVERY TASK.</span><span class="hero-cursor" aria-hidden="true"></span>
+                    THE WORLD'S FIRST CLI WITH<br>
+                    <span class="hero-accent">NATIVE TERMINAL SPLIT PANEL.</span><span class="hero-cursor" aria-hidden="true"></span>
                 </h1>
 
                 <p class="hero-desc">
-                    The first CLI tool with true multi-model orchestration. Assign Claude for planning, GPT for coding, Gemini for reviews &mdash; all coordinated in split-panel terminal panes.
+                    The first CLI tool with native Windows Terminal split panel mode. Run Claude, GPT, and Gemini agents in parallel panes &mdash; no tmux required. Also supports iTerm2 on macOS.
                 </p>
 
-                <!-- Install Box -->
                 <div class="install-box" role="group" aria-label="Install command">
                     <div class="prompt-arrow" aria-hidden="true">&rarr;</div>
                     <label for="install-cmd" class="sr-only">Install command</label>
                     <input id="install-cmd" type="text" class="install-input" value="npm install -g aemeathcli" readonly>
-                    <button class="copy-btn" aria-label="Copy install command to clipboard">cp</button>
+                    <button class="copy-btn" aria-label="Copy install command">cp</button>
                 </div>
 
-                <!-- Terminal Window -->
                 <div class="terminal-window">
                     <div class="terminal-header">
                         <span>src/core/model-router.ts</span>
                         <span>esc when done</span>
                     </div>
-                    <div class="code-block" aria-label="Code diff showing the model resolution pipeline: checking user override, then primary model config, then fallback chain">
+                    <div class="code-block" aria-label="Code diff showing model resolution pipeline">
                         <div class="line">
                             <span class="ln">12</span>
                             <span class="code"><span class="kwd">export const</span> <span class="fn">resolve</span> = ({ <span class="attr">role</span>, <span class="attr">ctx</span> }) =&gt; {</span>
@@ -664,7 +834,7 @@
                         </div>
                         <div class="line">
                             <span class="ln">17</span>
-                            <span class="code">  <span class="kwd">return</span> <span class="tag">&lt;ModelStream</span> <span class="attr">provider</span>={primary} <span class="tag">/&gt;</span>;</span>
+                            <span class="code">  <span class="kwd">return</span> &lt;<span class="fn">ModelStream</span> <span class="attr">provider</span>={primary} /&gt;;</span>
                         </div>
                         <div class="line">
                             <span class="ln">18</span>
@@ -674,68 +844,60 @@
                 </div>
             </section>
 
-            <!-- Features Grid -->
-            <section id="features" class="features-grid" aria-label="Key features">
-                <div class="feature-cell reveal">
-                    <div class="feature-header">
-                        <span>01</span>
-                        <span>[x]</span>
+            <!-- =================== Z-FEATURES =================== -->
+            <section id="features" class="z-features" aria-label="Key features">
+
+                <!-- Row 1: Text left — Screenshot right -->
+                <div class="z-row reveal">
+                    <div class="z-content">
+                        <span class="z-label">01 &mdash; Windows</span>
+                        <h2 class="z-title">Native Windows Terminal Split Panel</h2>
+                        <p class="z-desc">The first CLI tool to leverage Windows Terminal's native pane API. No tmux, no WSL workarounds. Each AI agent runs in its own parallel pane with real-time IPC coordination and shared board state.</p>
                     </div>
-                    <h2 class="feature-title">Multi-Model Orchestration</h2>
-                    <p class="feature-desc">Claude Opus for architecture, GPT-5.2 for implementation, Gemini 2.5 Pro for code review &mdash; all in one session with real-time streaming.</p>
+                    <div class="z-image reveal-d1">
+                        <img src="screenshots/win-splitpanel.jpg"
+                             alt="AemeathCLI running multiple AI agents in split panels on Windows Terminal"
+                             loading="lazy" decoding="async">
+                    </div>
                 </div>
-                <div class="feature-cell reveal reveal-delay-1">
-                    <div class="feature-header">
-                        <span>02</span>
-                        <span>[x]</span>
+
+                <!-- Row 2: Screenshot left — Text right (reversed Z) -->
+                <div class="z-row z-row--reversed reveal">
+                    <div class="z-content">
+                        <span class="z-label">02 &mdash; macOS</span>
+                        <h2 class="z-title">iTerm2 Native Pane Integration</h2>
+                        <p class="z-desc">Seamless split panel orchestration through iTerm2's native AppleScript API. Hub-and-spoke coordination with shared board directory and real-time message passing between agents.</p>
                     </div>
-                    <h2 class="feature-title">Split-Panel Mode</h2>
-                    <p class="feature-desc">Each agent gets its own iTerm2 or tmux pane. Hub-and-spoke coordination with shared board directory and real-time IPC.</p>
+                    <div class="z-image reveal-d1">
+                        <img src="screenshots/mac-splitpanel.jpg"
+                             alt="AemeathCLI split panel orchestration on macOS with iTerm2"
+                             loading="lazy" decoding="async">
+                    </div>
                 </div>
-                <div class="feature-cell reveal reveal-delay-2">
-                    <div class="feature-header">
-                        <span>03</span>
-                        <span>[x]</span>
+
+                <!-- Row 3: Text left — Screenshot right -->
+                <div class="z-row reveal">
+                    <div class="z-content">
+                        <span class="z-label">03 &mdash; Orchestration</span>
+                        <h2 class="z-title">Multi-Model Agent Swarm</h2>
+                        <p class="z-desc">Describe your task in plain English. The LLM designs the optimal team &mdash; choosing models, roles, and prompts. Claude for architecture, GPT for implementation, Gemini for review.</p>
                     </div>
-                    <h2 class="feature-title">Cross-Model Agent Teams</h2>
-                    <p class="feature-desc">LLM designs the team from natural language. No hardcoded agents &mdash; roles, models, and tasks are all dynamically decided.</p>
-                </div>
-                <div class="feature-cell reveal reveal-delay-3">
-                    <div class="feature-header">
-                        <span>04</span>
-                        <span>[x]</span>
+                    <div class="z-image reveal-d1">
+                        <img src="screenshots/home.jpg"
+                             alt="AemeathCLI welcome screen showing the Aemeath Agent Swarm interface"
+                             loading="lazy" decoding="async">
                     </div>
-                    <h2 class="feature-title">Role-Based Routing</h2>
-                    <p class="feature-desc">4-step model resolution: user override, role config, fallback chain, system default. Planning, coding, review, testing &mdash; each gets the best model.</p>
-                </div>
-                <div class="feature-cell reveal reveal-delay-4">
-                    <div class="feature-header">
-                        <span>05</span>
-                        <span>[x]</span>
-                    </div>
-                    <h2 class="feature-title">Native Account Login</h2>
-                    <p class="feature-desc">Login to Claude, Codex, Gemini, and Kimi via their native browser auth flows. Use your existing Pro/Plus subscription &mdash; no separate API billing.</p>
-                </div>
-                <div class="feature-cell reveal reveal-delay-5">
-                    <div class="feature-header">
-                        <span>06</span>
-                        <span>[x]</span>
-                    </div>
-                    <h2 class="feature-title">Enterprise Security</h2>
-                    <p class="feature-desc">OS keychain credential storage, AES-256-GCM encrypted fallback, HMAC-SHA256 IPC authentication, sandboxed shell execution.</p>
                 </div>
             </section>
 
-            <!-- Agent Teams Demo Section -->
+            <!-- =================== AGENT TEAMS DEMO =================== -->
             <section id="teams" class="demo-section" aria-label="Agent teams demonstration">
-                <div class="status-line">
-                    <span>&gt; agent teams</span>
-                </div>
+                <div class="section-label">Agent Teams</div>
 
                 <div class="demo-grid">
                     <div class="reveal">
                         <h2 class="demo-title">LLM-Designed Agent Teams</h2>
-                        <p class="demo-desc text-sec">
+                        <p class="demo-desc">
                             Describe what you need in plain English. The LLM analyzes your prompt and designs the optimal team &mdash; agent count, roles, models, and task prompts.
                         </p>
 
@@ -755,9 +917,9 @@
                         </div>
                     </div>
 
-                    <div class="terminal-output reveal reveal-delay-1">
+                    <div class="terminal-output reveal reveal-d2">
                         <div class="terminal-label">Split-Panel Output</div>
-                        <div class="terminal-content" aria-label="Terminal output showing AemeathCLI spawning a 3-agent team with Claude Opus for planning, Sonnet for coding, and GPT for review">
+                        <div class="terminal-content" aria-label="Terminal output showing agent team spawning">
                             <div>&gt; Analyzing team request... <span class="terminal-highlight">Done</span></div>
                             <div>&gt; Designed 3-agent team:</div>
                             <div class="terminal-indent"><span class="terminal-highlight">AuthArchitect</span> (claude-opus-4-6) &mdash; planning</div>
@@ -765,7 +927,7 @@
                             <div class="terminal-indent"><span class="terminal-highlight">SecurityReviewer</span> (gpt-5.2) &mdash; review</div>
                             <div class="terminal-strong">&gt; Split-panel active <span class="terminal-highlight">&#10003;</span></div>
                             <div class="terminal-prompt-line">
-                                <span class="text-mut">/team stop to exit</span> <span class="hero-cursor" aria-hidden="true"></span>
+                                <span class="terminal-dim">/team stop to exit</span> <span class="hero-cursor" aria-hidden="true"></span>
                             </div>
                         </div>
                     </div>
@@ -778,127 +940,161 @@
     <!-- Footer -->
     <footer class="shortcuts-bar">
         <div class="key-group">
-            <div><span class="key">g</span> GitHub</div>
-            <div><span class="key">d</span> npm</div>
+            <a href="https://github.com/ZacharyZhang-NY/AemeathCLI" rel="noopener" target="_blank"><span class="key">g</span> GitHub</a>
+            <a href="https://www.npmjs.com/package/aemeathcli" rel="noopener" target="_blank"><span class="key">d</span> npm</a>
         </div>
         <div class="key-group">
-            <div><span class="key">&uarr;</span> <span class="key">&darr;</span> scroll</div>
-            <div class="text-mut">&copy; 2026 AemeathCLI</div>
+            <span>&copy; 2026 AemeathCLI</span>
         </div>
     </footer>
 
     <script>
-        /* Copy to Clipboard */
+        /* ===================== Theme Toggle ===================== */
         (function() {
-            var copyBtn = document.querySelector('.copy-btn');
-            var installInput = document.getElementById('install-cmd');
-            if (!copyBtn || !installInput) return;
+            var html = document.documentElement;
+            var KEY = 'aemeath-theme';
 
-            var originalLabel = copyBtn.textContent;
-
-            copyBtn.addEventListener('click', function() {
-                var text = installInput.value;
-                if (navigator.clipboard && navigator.clipboard.writeText) {
-                    navigator.clipboard.writeText(text).then(onCopied, fallbackCopy);
-                } else {
-                    fallbackCopy();
-                }
-            });
-
-            function fallbackCopy() {
-                installInput.select();
-                installInput.setSelectionRange(0, 99999);
-                document.execCommand('copy');
-                onCopied();
+            function effective() {
+                return html.getAttribute('data-theme') || 'dark';
             }
 
-            function onCopied() {
-                copyBtn.textContent = 'done';
-                setTimeout(function() { copyBtn.textContent = originalLabel; }, 1500);
+            function applyUI() {
+                var theme = effective();
+                document.querySelectorAll('[data-theme-toggle]').forEach(function(btn) {
+                    var full = btn.dataset.themeToggle === 'full';
+                    if (full) {
+                        btn.textContent = theme === 'dark' ? '\u25D0 light mode' : '\u25D1 dark mode';
+                    } else {
+                        btn.textContent = theme === 'dark' ? '\u25D0' : '\u25D1';
+                    }
+                    btn.setAttribute('aria-label', 'Switch to ' + (theme === 'dark' ? 'light' : 'dark') + ' theme');
+                });
+            }
+
+            function toggle() {
+                html.classList.add('theme-switching');
+                var next = effective() === 'light' ? 'dark' : 'light';
+                html.setAttribute('data-theme', next);
+                localStorage.setItem(KEY, next);
+                applyUI();
+                setTimeout(function() { html.classList.remove('theme-switching'); }, 400);
+            }
+
+            document.querySelectorAll('[data-theme-toggle]').forEach(function(btn) {
+                btn.addEventListener('click', toggle);
+            });
+
+            applyUI();
+        })();
+
+        /* ===================== Copy to Clipboard ===================== */
+        (function() {
+            var copyBtn = document.querySelector('.copy-btn');
+            var input = document.getElementById('install-cmd');
+            if (!copyBtn || !input) return;
+            var orig = copyBtn.textContent;
+
+            copyBtn.addEventListener('click', function() {
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    navigator.clipboard.writeText(input.value).then(done, legacy);
+                } else { legacy(); }
+            });
+
+            function legacy() {
+                input.select();
+                input.setSelectionRange(0, 99999);
+                document.execCommand('copy');
+                done();
+            }
+
+            function done() {
+                copyBtn.textContent = 'ok';
+                setTimeout(function() { copyBtn.textContent = orig; }, 1400);
             }
         })();
 
-        /* Mobile Navigation */
+        /* ===================== Mobile Navigation ===================== */
         (function() {
             var hamburger = document.querySelector('.hamburger');
             var overlay = document.getElementById('mobile-nav-overlay');
             var closeBtn = document.querySelector('.mobile-nav-close');
-            var navLinks = overlay ? overlay.querySelectorAll('.nav-item') : [];
-            var focusableNav = overlay ? overlay.querySelectorAll('button, a[href]') : [];
+            if (!hamburger || !overlay) return;
+            var links = overlay.querySelectorAll('.nav-item');
+            var focusable = overlay.querySelectorAll('button, a[href]');
 
-            function openNav() {
+            function open() {
                 overlay.classList.add('open');
                 hamburger.setAttribute('aria-expanded', 'true');
-                closeBtn.focus();
+                if (closeBtn) closeBtn.focus();
             }
 
-            function closeNav() {
+            function close() {
                 overlay.classList.remove('open');
                 hamburger.setAttribute('aria-expanded', 'false');
                 hamburger.focus();
             }
 
-            if (hamburger) hamburger.addEventListener('click', openNav);
-            if (closeBtn) closeBtn.addEventListener('click', closeNav);
-            if (overlay) {
-                overlay.addEventListener('click', function(e) {
-                    if (e.target === overlay) closeNav();
-                });
-            }
+            hamburger.addEventListener('click', open);
+            if (closeBtn) closeBtn.addEventListener('click', close);
 
-            navLinks.forEach(function(link) { link.addEventListener('click', closeNav); });
+            overlay.addEventListener('click', function(e) {
+                if (e.target === overlay) close();
+            });
+
+            links.forEach(function(l) { l.addEventListener('click', close); });
 
             document.addEventListener('keydown', function(e) {
                 if (!overlay.classList.contains('open')) return;
-
-                if (e.key === 'Escape') {
-                    closeNav();
-                    return;
-                }
-                if (e.key === 'Tab') {
-                    var first = focusableNav[0];
-                    var last = focusableNav[focusableNav.length - 1];
-                    if (e.shiftKey) {
-                        if (document.activeElement === first) { e.preventDefault(); last.focus(); }
-                    } else {
-                        if (document.activeElement === last) { e.preventDefault(); first.focus(); }
-                    }
+                if (e.key === 'Escape') { close(); return; }
+                if (e.key === 'Tab' && focusable.length) {
+                    var first = focusable[0], last = focusable[focusable.length - 1];
+                    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+                    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
                 }
             });
         })();
 
-        /* Active Nav Tracking */
+        /* ===================== Active Nav Tracking ===================== */
         (function() {
             var sections = document.querySelectorAll('section[id]');
-            var navItems = document.querySelectorAll('.sidebar .nav-item[href^="#"], .mobile-nav .nav-item[href^="#"]');
+            var items = document.querySelectorAll('.sidebar .nav-item[href^="#"], .mobile-nav .nav-item[href^="#"]');
 
-            var observer = new IntersectionObserver(function(entries) {
+            var obs = new IntersectionObserver(function(entries) {
                 entries.forEach(function(entry) {
                     if (entry.isIntersecting) {
-                        var id = entry.target.getAttribute('id');
-                        navItems.forEach(function(item) {
+                        var id = entry.target.id;
+                        items.forEach(function(item) {
                             item.classList.toggle('active', item.getAttribute('href') === '#' + id);
                         });
                     }
                 });
             }, { rootMargin: '-20% 0px -80% 0px' });
 
-            sections.forEach(function(section) { observer.observe(section); });
+            sections.forEach(function(s) { obs.observe(s); });
         })();
 
-        /* Scroll Reveal */
+        /* ===================== Scroll Reveal ===================== */
         (function() {
-            var reveals = document.querySelectorAll('.reveal');
-            var observer = new IntersectionObserver(function(entries) {
+            var els = document.querySelectorAll('.reveal');
+            var obs = new IntersectionObserver(function(entries) {
                 entries.forEach(function(entry) {
                     if (entry.isIntersecting) {
                         entry.target.classList.add('visible');
-                        observer.unobserve(entry.target);
+                        obs.unobserve(entry.target);
                     }
                 });
-            }, { threshold: 0.1 });
+            }, { threshold: 0.08 });
 
-            reveals.forEach(function(el) { observer.observe(el); });
+            els.forEach(function(el) { obs.observe(el); });
+        })();
+
+        /* ===================== Keyboard Shortcuts ===================== */
+        (function() {
+            document.addEventListener('keydown', function(e) {
+                if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.metaKey || e.ctrlKey) return;
+                if (e.key === 'g') window.open('https://github.com/ZacharyZhang-NY/AemeathCLI', '_blank');
+                if (e.key === 'd') window.open('https://www.npmjs.com/package/aemeathcli', '_blank');
+            });
         })();
     </script>
 </body>

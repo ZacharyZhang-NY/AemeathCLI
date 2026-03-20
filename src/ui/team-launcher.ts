@@ -148,7 +148,7 @@ export async function handlePromptBasedTeamCreation(
       : masterLeadModel;
     const agentSpecs = normalizeLeadAgentSpec(
       parseLLMTeamDesign(designResponse, availableModels, designModel),
-      teamMasterModel ?? designModel,
+      teamMasterModel,
     );
 
     const projectRoot = process.cwd();
@@ -440,6 +440,7 @@ async function launchWindowsTerminal(
 
   setActiveTeamName(teamName);
   setActiveTeamManager(undefined);
+  // eslint-disable-next-line @typescript-eslint/require-await
   setActiveTmuxCleanup(async () => {
     // Clean up temp files. WT panes close when their process exits.
     try {
