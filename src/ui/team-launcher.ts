@@ -97,10 +97,11 @@ export async function handlePromptBasedTeamCreation(
       return;
     }
 
-    // 2. Use the preferred master model to design the team via LLM.
-    const designModel = registry.hasModel(masterLeadModel)
-      ? masterLeadModel
-      : registry.hasModel(currentModelId) ? currentModelId : undefined;
+    // 2. Use the user's current active model to design the team (already authenticated).
+    //    Fall back to the resolved planning model only if the registry lacks the current model.
+    const designModel = registry.hasModel(currentModelId)
+      ? currentModelId
+      : registry.hasModel(masterLeadModel) ? masterLeadModel : undefined;
     if (!designModel) {
       sysMsg(setMessages, "Swarm team design needs at least one authenticated chat provider. Run `aemeathcli auth login` or configure an API key, then try again.");
       return;
@@ -140,13 +141,32 @@ export async function handlePromptBasedTeamCreation(
     ]);
     designResponse = designResult;
 
-    // 3. Parse the LLM's team design
+    // 3. Parse the LLM's team design.
+    //    Prefer the user's active model for the lead agent when it's in the available pool.
+    const teamMasterModel = availableModels.includes(currentModelId)
+      ? currentModelId
+      : masterLeadModel;
     const agentSpecs = normalizeLeadAgentSpec(
       parseLLMTeamDesign(designResponse, availableModels, designModel),
-      masterLeadModel,
+      teamMasterModel ?? designModel,
     );
 
-    // 4. Prepare shared resources
+    const projectRoot = process.cwd();
+    const isWindows = process.platform === "win32";
+    const isWindowsTerminal = isWindows
+      && typeof process.env["WT_SESSION"] === "string"
+      && process.env["WT_SESSION"].length > 0;
+
+    // 4. Windows without Windows Terminal — no native pane support available.
+    //    Skip bash/PS1 script generation and go directly to in-process split-panel.
+    if (isWindows && !isWindowsTerminal) {
+      await launchInProcess(
+        agentSpecs, input, teamName, config, panel, setMessages, projectRoot,
+      );
+      return undefined;
+    }
+
+    // 5. Prepare shared resources for terminal-pane launch modes.
     const fs = await import("node:fs");
     const path = await import("node:path");
     const os = await import("node:os");
@@ -156,7 +176,6 @@ export async function handlePromptBasedTeamCreation(
     fs.mkdirSync(boardDir, { recursive: true });
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "aemeathcli-team-"));
     const shellEscape = (s: string): string => s.replace(/'/gu, "'\\''");
-    const projectRoot = process.cwd();
 
     const [leadSpec, ...workerSpecs] = agentSpecs;
     if (!leadSpec) return;
@@ -251,7 +270,7 @@ export async function handlePromptBasedTeamCreation(
           : `  ${spec.name} (${spec.model}) — ${spec.role}`,
       );
 
-    // 5. iTerm2 native pane support (macOS)
+    // 6. iTerm2 native pane support (macOS)
     const isITerm2 = process.platform === "darwin" && process.env["TERM_PROGRAM"] === "iTerm.app";
 
     if (isITerm2) {
@@ -261,7 +280,15 @@ export async function handlePromptBasedTeamCreation(
       );
     }
 
-    // 6. tmux-based split-panel mode
+    // 7. Windows Terminal native pane support (Windows)
+    if (isWindowsTerminal) {
+      return await launchWindowsTerminal(
+        agentSpecs, leadSpec, workerCommands, teamName, tempDir, boardDir,
+        fs, execaPane, setMessages, formatAgentLines, leadCoordinationTask, projectRoot,
+      );
+    }
+
+    // 8. tmux-based split-panel mode
     const { TmuxManager } = await import("../panes/tmux-manager.js");
     const tmux = new TmuxManager();
     const tmuxAvailable = await tmux.isAvailable();
@@ -280,7 +307,7 @@ export async function handlePromptBasedTeamCreation(
       );
     }
 
-    // 7. In-process fallback
+    // 9. In-process fallback (no native pane support detected)
     await launchInProcess(
       agentSpecs, input, teamName, config, panel, setMessages, projectRoot,
     );
@@ -363,6 +390,71 @@ async function launchITerm2(
     `Team "${teamName}" — ${agentSpecs.length} agents active.\n` +
     `${workerCommands.length} worker panes in iTerm2 + lead coordinating here.\n` +
     `${agentLines.join("\n")}\n/team stop to shut down all agents.`,
+  );
+  return leadCoordinationTask;
+}
+
+// ── Windows Terminal Launch ───────────────────────────────────────────────
+
+async function launchWindowsTerminal(
+  agentSpecs: readonly ILLMAgentSpec[],
+  leadSpec: ILLMAgentSpec,
+  workerCommands: Array<{ name: string; command: string }>,
+  teamName: string,
+  tempDir: string,
+  boardDir: string,
+  fs: typeof NodeFs,
+  execaPane: typeof ExecaFn,
+  setMessages: SetMessagesDispatch,
+  formatAgentLines: (lead: string) => string[],
+  leadCoordinationTask: string,
+  projectRoot: string,
+): Promise<string | undefined> {
+  sysMsg(setMessages, `Designed ${agentSpecs.length}-agent team. Creating Windows Terminal split panes...`);
+
+  // Build hub-and-spoke layout using wt.exe split-pane commands.
+  // First worker: vertical split (creates left/right halves).
+  // Subsequent workers: horizontal splits (stack on the right side).
+  // After all splits, focus returns to the leader pane (first/leftmost).
+  for (const [i, agent] of workerCommands.entries()) {
+    const splitDir = i === 0 ? "-V" : "-H";
+    const args = ["-w", "0", "sp", splitDir];
+    if (i === 0) args.push("-s", "0.5");
+    args.push("-d", projectRoot, "--title", agent.name);
+    // The agent.command is a PowerShell launcher: powershell -ExecutionPolicy Bypass -File "path.ps1"
+    // Pass it via cmd /c so wt.exe treats it as the pane's commandline.
+    args.push("cmd", "/c", agent.command);
+
+    try {
+      await execaPane("wt", args);
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      sysMsg(setMessages, `Failed to create WT pane for ${agent.name}: ${errMsg.slice(0, 200)}`);
+    }
+  }
+
+  // Return focus to the leader pane (leftmost).
+  try {
+    await execaPane("wt", ["-w", "0", "mf", "first"]);
+  } catch { /* non-fatal — focus may already be correct */ }
+
+  setActiveTeamName(teamName);
+  setActiveTeamManager(undefined);
+  setActiveTmuxCleanup(async () => {
+    // Clean up temp files. WT panes close when their process exits.
+    try {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+      fs.rmSync(boardDir, { recursive: true, force: true });
+    } catch { /* non-critical */ }
+  });
+
+  const agentLines = formatAgentLines(leadSpec.name);
+  sysMsg(setMessages,
+    `Team "${teamName}" — ${agentSpecs.length} agents active.\n` +
+    `${workerCommands.length} worker panes in Windows Terminal + lead coordinating here.\n` +
+    `${agentLines.join("\n")}\n` +
+    `Keybindings:\n  Alt+Arrow     Switch pane\n  Alt+Shift+Arrow  Resize pane\n` +
+    `/team stop to shut down all agents.`,
   );
   return leadCoordinationTask;
 }

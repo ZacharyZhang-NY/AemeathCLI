@@ -217,7 +217,8 @@ export function normalizeLeadAgentSpec(
 }
 
 /**
- * Build a launcher shell script for an agent pane.
+ * Build a launcher script for an agent pane.
+ * Generates bash scripts on macOS/Linux and PowerShell scripts on Windows.
  */
 export function writeAgentLauncherScript(
   provider: string,
@@ -228,6 +229,12 @@ export function writeAgentLauncherScript(
   shellEscapeFn: (s: string) => string,
   writeFileSyncFn: (path: string, data: string, opts?: { mode?: number }) => void,
 ): string {
+  if (process.platform === "win32") {
+    return writeWindowsLauncherScript(
+      provider, model, promptFile, launcherFile, projectRoot, writeFileSyncFn,
+    );
+  }
+
   const cliProvider = getCliProviderForModelProvider(provider as ProviderName);
 
   if (cliProvider) {
@@ -249,4 +256,39 @@ export function writeAgentLauncherScript(
   ].join("\n");
   writeFileSyncFn(launcherFile, script, { mode: 0o755 });
   return `bash '${shellEscapeFn(launcherFile)}'`;
+}
+
+/**
+ * Windows variant: generates a PowerShell (.ps1) launcher script.
+ * PowerShell handles multi-line prompt files correctly (unlike cmd.exe set /p).
+ */
+function writeWindowsLauncherScript(
+  provider: string,
+  model: string,
+  promptFile: string,
+  launcherFile: string,
+  projectRoot: string,
+  writeFileSyncFn: (path: string, data: string, opts?: { mode?: number }) => void,
+): string {
+  const ps1File = launcherFile.replace(/\.[^.]+$/, ".ps1");
+  const cliProvider = getCliProviderForModelProvider(provider as ProviderName);
+
+  if (cliProvider) {
+    const startCommand = getCliProviderEntry(cliProvider).startCommand(model);
+    const script = [
+      `Set-Location -Path '${projectRoot.replace(/'/g, "''")}'`,
+      `$prompt = Get-Content -Path '${promptFile.replace(/'/g, "''")}' -Raw`,
+      `& ${startCommand} $prompt`,
+    ].join("\r\n");
+    writeFileSyncFn(ps1File, script);
+    return `powershell -ExecutionPolicy Bypass -File "${ps1File}"`;
+  }
+
+  const script = [
+    `Set-Location -Path '${projectRoot.replace(/'/g, "''")}'`,
+    `$env:AEMEATHCLI_PROMPT_FILE = '${promptFile.replace(/'/g, "''")}'`,
+    `& '${process.execPath.replace(/'/g, "''")}' '${(process.argv[1] ?? "aemeathcli").replace(/'/g, "''")}' --model ${model}`,
+  ].join("\r\n");
+  writeFileSyncFn(ps1File, script);
+  return `powershell -ExecutionPolicy Bypass -File "${ps1File}"`;
 }

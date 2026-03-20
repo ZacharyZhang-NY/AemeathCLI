@@ -47,6 +47,9 @@ export class TmuxManager {
    * Check if tmux is available on this system.
    */
   async isAvailable(): Promise<boolean> {
+    // tmux is Unix-only — always unavailable on Windows.
+    if (process.platform === "win32") return false;
+
     try {
       const result = await execa("which", [TMUX_BINARY]);
       return result.exitCode === 0;

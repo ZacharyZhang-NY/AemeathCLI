@@ -3,7 +3,7 @@
  * NO hardcoded paths — use path.join(), os.homedir(), XDG Base Directory
  */
 
-import { homedir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { existsSync, mkdirSync } from "node:fs";
 
@@ -90,8 +90,11 @@ export function getProjectAgentsPath(projectRoot: string): string {
 // ── Socket paths (PRD section 14.5) ──────────────────────────────────────
 
 export function getIPCSocketDir(): string {
-  const tmpDir = process.env["TMPDIR"] ?? "/tmp";
-  return join(tmpDir, `aemeathcli-${process.getuid?.() ?? "user"}`);
+  const tmp = process.env["TMPDIR"] ?? tmpdir();
+  const uid = process.platform === "win32"
+    ? (process.env["USERNAME"] ?? "user")
+    : String(process.getuid?.() ?? "user");
+  return join(tmp, `aemeathcli-${uid}`);
 }
 
 export function getIPCSocketPath(sessionId: string): string {
