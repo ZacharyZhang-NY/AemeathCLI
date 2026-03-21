@@ -226,61 +226,31 @@ export async function createDefaultRegistry(
     {
       name: "anthropic",
       load: async () => {
-        const { ClaudeAdapter } = await import("./claude-adapter.js");
-        const credential = await session.getActiveCredential("anthropic").catch(() => undefined);
-        const useNative = await shouldUseNative(credential, "claude", "ANTHROPIC_API_KEY");
-
-        if (useNative) {
-          const { ClaudeNativeCLIAdapter, logNativeAdapterSelection } = await import(
-            "./native-cli-adapters.js"
-          );
-          logNativeAdapterSelection("anthropic");
-          return new ClaudeNativeCLIAdapter();
-        }
-
-        return new ClaudeAdapter(
-          credential?.token !== undefined ? { apiKey: credential.token } : undefined,
+        const { ClaudeNativeCLIAdapter, logNativeAdapterSelection } = await import(
+          "./native-cli-adapters.js"
         );
+        logNativeAdapterSelection("anthropic");
+        return new ClaudeNativeCLIAdapter();
       },
     },
     {
       name: "openai",
       load: async () => {
-        const { OpenAIAdapter } = await import("./openai-adapter.js");
-        const credential = await session.getActiveCredential("openai").catch(() => undefined);
-        const useNative = await shouldUseNative(credential, "codex", "OPENAI_API_KEY");
-
-        if (useNative) {
-          const { CodexNativeCLIAdapter, logNativeAdapterSelection } = await import(
-            "./native-cli-adapters.js"
-          );
-          logNativeAdapterSelection("openai");
-          return new CodexNativeCLIAdapter();
-        }
-
-        return new OpenAIAdapter(
-          credential?.token !== undefined ? { apiKey: credential.token } : undefined,
+        const { CodexNativeCLIAdapter, logNativeAdapterSelection } = await import(
+          "./native-cli-adapters.js"
         );
+        logNativeAdapterSelection("openai");
+        return new CodexNativeCLIAdapter();
       },
     },
     {
       name: "google",
       load: async () => {
-        const { GeminiAdapter } = await import("./gemini-adapter.js");
-        const credential = await session.getActiveCredential("google").catch(() => undefined);
-        const useNative = await shouldUseNative(credential, "gemini", "GOOGLE_API_KEY");
-
-        if (useNative) {
-          const { GeminiNativeCLIAdapter, logNativeAdapterSelection } = await import(
-            "./native-cli-adapters.js"
-          );
-          logNativeAdapterSelection("google");
-          return new GeminiNativeCLIAdapter();
-        }
-
-        return new GeminiAdapter(
-          credential?.token !== undefined ? { apiKey: credential.token } : undefined,
+        const { GeminiNativeCLIAdapter, logNativeAdapterSelection } = await import(
+          "./native-cli-adapters.js"
         );
+        logNativeAdapterSelection("google");
+        return new GeminiNativeCLIAdapter();
       },
     },
     {

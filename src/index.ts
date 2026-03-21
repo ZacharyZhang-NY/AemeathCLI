@@ -75,9 +75,6 @@ export { TaskOrchestrator } from "./core/task-orchestrator.js";
 
 export type { IModelProvider, IProviderOptions } from "./providers/types.js";
 export { ProviderRegistry } from "./providers/registry.js";
-export { ClaudeAdapter } from "./providers/claude-adapter.js";
-export { OpenAIAdapter } from "./providers/openai-adapter.js";
-export { GeminiAdapter } from "./providers/gemini-adapter.js";
 export { KimiAdapter } from "./providers/kimi-adapter.js";
 export { OllamaAdapter } from "./providers/ollama-adapter.js";
 export {
