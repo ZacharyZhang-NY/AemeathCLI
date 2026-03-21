@@ -2,10 +2,13 @@
  * Prompt-based team creation — orchestrates LLM design and pane launches.
  * Extracted from App.tsx to enforce the 300-line component limit (PRD 6.2).
  *
- * Supports three launch modes:
+ * Supports five launch modes:
  * 1. iTerm2 native panes (macOS, preferred when in iTerm2)
- * 2. tmux split panes (inside existing tmux session or new session)
- * 3. In-process split-panel mode (fallback when tmux unavailable)
+ * 2. Ghostty native panes (macOS, via System Events keystroke simulation)
+ * 3. macOS Terminal.app panes (via System Events keystroke simulation)
+ * 4. Windows Terminal native panes (via wt.exe split-pane commands)
+ * 5. tmux split panes (inside existing tmux session or new session)
+ * 6. In-process split-panel mode (fallback when no native pane support)
  */
 
 import type {
@@ -280,7 +283,27 @@ export async function handlePromptBasedTeamCreation(
       );
     }
 
-    // 7. Windows Terminal native pane support (Windows)
+    // 7. Ghostty native pane support (macOS)
+    const isGhostty = process.platform === "darwin" && process.env["TERM_PROGRAM"] === "ghostty";
+
+    if (isGhostty) {
+      return await launchGhostty(
+        agentSpecs, leadSpec, workerCommands, teamName, tempDir, boardDir,
+        fs, path, execaPane, setMessages, formatAgentLines, leadCoordinationTask,
+      );
+    }
+
+    // 8. macOS Terminal.app native pane support
+    const isTerminalApp = process.platform === "darwin" && process.env["TERM_PROGRAM"] === "Apple_Terminal";
+
+    if (isTerminalApp) {
+      return await launchTerminalApp(
+        agentSpecs, leadSpec, workerCommands, teamName, tempDir, boardDir,
+        fs, path, execaPane, setMessages, formatAgentLines, leadCoordinationTask,
+      );
+    }
+
+    // 9. Windows Terminal native pane support (Windows)
     if (isWindowsTerminal) {
       return await launchWindowsTerminal(
         agentSpecs, leadSpec, workerCommands, teamName, tempDir, boardDir,
@@ -288,7 +311,7 @@ export async function handlePromptBasedTeamCreation(
       );
     }
 
-    // 8. tmux-based split-panel mode
+    // 10. tmux-based split-panel mode
     const { TmuxManager } = await import("../panes/tmux-manager.js");
     const tmux = new TmuxManager();
     const tmuxAvailable = await tmux.isAvailable();
@@ -307,7 +330,7 @@ export async function handlePromptBasedTeamCreation(
       );
     }
 
-    // 9. In-process fallback (no native pane support detected)
+    // 11. In-process fallback (no native pane support detected)
     await launchInProcess(
       agentSpecs, input, teamName, config, panel, setMessages, projectRoot,
     );
@@ -390,6 +413,188 @@ async function launchITerm2(
     `Team "${teamName}" — ${agentSpecs.length} agents active.\n` +
     `${workerCommands.length} worker panes in iTerm2 + lead coordinating here.\n` +
     `${agentLines.join("\n")}\n/team stop to shut down all agents.`,
+  );
+  return leadCoordinationTask;
+}
+
+// ── Ghostty Launch ────────────────────────────────────────────────────────
+
+async function launchGhostty(
+  agentSpecs: readonly ILLMAgentSpec[],
+  leadSpec: ILLMAgentSpec,
+  workerCommands: Array<{ name: string; command: string }>,
+  teamName: string,
+  tempDir: string,
+  boardDir: string,
+  fs: typeof NodeFs,
+  path: typeof NodePath,
+  execaPane: typeof ExecaFn,
+  setMessages: SetMessagesDispatch,
+  formatAgentLines: (lead: string) => string[],
+  leadCoordinationTask: string,
+): Promise<string | undefined> {
+  sysMsg(setMessages, `Designed ${agentSpecs.length}-agent team. Creating Ghostty split panes...`);
+
+  // Build AppleScript that uses System Events to simulate Ghostty keybindings.
+  // Default Ghostty macOS keybindings:
+  //   Cmd+D           → new_split:right
+  //   Cmd+Shift+D     → new_split:down
+  //   Cmd+Option+Left → goto_split:left
+  const asEscape = (s: string): string => s.replace(/\\/gu, "\\\\").replace(/"/gu, '\\"');
+  const scriptLines: string[] = [];
+
+  scriptLines.push('tell application "Ghostty" to activate');
+  scriptLines.push("delay 0.5");
+  scriptLines.push('tell application "System Events"');
+
+  for (const [i, agent] of workerCommands.entries()) {
+    // First worker: right split (hub-spoke left/right).
+    // Subsequent workers: down split (stack in right column).
+    if (i === 0) {
+      scriptLines.push('  keystroke "d" using {command down}');
+    } else {
+      scriptLines.push('  keystroke "d" using {command down, shift down}');
+    }
+    scriptLines.push("  delay 1.0");
+
+    const escapedCmd = asEscape(agent.command);
+    scriptLines.push(`  keystroke "${escapedCmd}"`);
+    scriptLines.push("  delay 0.2");
+    scriptLines.push("  keystroke return");
+    scriptLines.push("  delay 0.5");
+  }
+
+  // Navigate back to leader pane (leftmost) using Cmd+Option+Left arrow.
+  // key code 123 = Left arrow.
+  if (workerCommands.length > 0) {
+    for (let i = 0; i < workerCommands.length; i++) {
+      scriptLines.push("  key code 123 using {command down, option down}");
+      scriptLines.push("  delay 0.2");
+    }
+  }
+
+  scriptLines.push("end tell");
+
+  const scriptFile = path.join(tempDir, "create-panes.applescript");
+  fs.writeFileSync(scriptFile, scriptLines.join("\n"), "utf-8");
+
+  try {
+    await execaPane("osascript", [scriptFile]);
+  } catch (scriptErr: unknown) {
+    const errMsg = scriptErr instanceof Error ? scriptErr.message : String(scriptErr);
+    sysMsg(setMessages,
+      `Failed to create Ghostty panes: ${errMsg.slice(0, 200)}\n` +
+      `Ensure macOS accessibility permissions are granted and Ghostty uses default split keybindings ` +
+      `(Cmd+D = new_split:right, Cmd+Shift+D = new_split:down).`,
+    );
+    return;
+  }
+
+  setActiveTeamName(teamName);
+  setActiveTeamManager(undefined);
+  setActiveTmuxCleanup(async () => {
+    try {
+      const { execFileSync } = await import("node:child_process");
+      execFileSync("pkill", ["-f", tempDir], { stdio: "ignore" });
+    } catch { /* no matching processes */ }
+    try {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+      fs.rmSync(boardDir, { recursive: true, force: true });
+    } catch { /* non-critical */ }
+  });
+
+  const agentLines = formatAgentLines(leadSpec.name);
+  sysMsg(setMessages,
+    `Team "${teamName}" — ${agentSpecs.length} agents active.\n` +
+    `${workerCommands.length} worker panes in Ghostty + lead coordinating here.\n` +
+    `${agentLines.join("\n")}\n` +
+    `Keybindings:\n` +
+    `  Cmd+Opt+Arrows    Switch pane\n` +
+    `  Cmd+Shift+Enter   Zoom pane\n` +
+    `  Cmd+Ctrl+=         Equalize splits\n` +
+    `/team stop to shut down all agents.`,
+  );
+  return leadCoordinationTask;
+}
+
+// ── macOS Terminal.app Launch ─────────────────────────────────────────────
+
+async function launchTerminalApp(
+  agentSpecs: readonly ILLMAgentSpec[],
+  leadSpec: ILLMAgentSpec,
+  workerCommands: Array<{ name: string; command: string }>,
+  teamName: string,
+  tempDir: string,
+  boardDir: string,
+  fs: typeof NodeFs,
+  path: typeof NodePath,
+  execaPane: typeof ExecaFn,
+  setMessages: SetMessagesDispatch,
+  formatAgentLines: (lead: string) => string[],
+  leadCoordinationTask: string,
+): Promise<string | undefined> {
+  sysMsg(setMessages, `Designed ${agentSpecs.length}-agent team. Creating Terminal.app split panes...`);
+
+  // Build AppleScript that uses System Events to simulate Terminal.app shortcuts.
+  // Terminal.app supports:
+  //   Cmd+D       → Split pane
+  //   Shift+Cmd+D → Close split pane
+  // No built-in keyboard shortcut for navigating between split panes.
+  const asEscape = (s: string): string => s.replace(/\\/gu, "\\\\").replace(/"/gu, '\\"');
+  const scriptLines: string[] = [];
+
+  scriptLines.push('tell application "Terminal" to activate');
+  scriptLines.push("delay 0.5");
+  scriptLines.push('tell application "System Events"');
+
+  for (const agent of workerCommands) {
+    // Cmd+D creates a new split pane; focus moves to the new pane.
+    scriptLines.push('  keystroke "d" using {command down}');
+    scriptLines.push("  delay 1.0");
+
+    const escapedCmd = asEscape(agent.command);
+    scriptLines.push(`  keystroke "${escapedCmd}"`);
+    scriptLines.push("  delay 0.2");
+    scriptLines.push("  keystroke return");
+    scriptLines.push("  delay 0.5");
+  }
+
+  scriptLines.push("end tell");
+
+  const scriptFile = path.join(tempDir, "create-panes.applescript");
+  fs.writeFileSync(scriptFile, scriptLines.join("\n"), "utf-8");
+
+  try {
+    await execaPane("osascript", [scriptFile]);
+  } catch (scriptErr: unknown) {
+    const errMsg = scriptErr instanceof Error ? scriptErr.message : String(scriptErr);
+    sysMsg(setMessages,
+      `Failed to create Terminal.app panes: ${errMsg.slice(0, 200)}\n` +
+      `Ensure macOS accessibility permissions are granted for Terminal.app.`,
+    );
+    return;
+  }
+
+  setActiveTeamName(teamName);
+  setActiveTeamManager(undefined);
+  setActiveTmuxCleanup(async () => {
+    try {
+      const { execFileSync } = await import("node:child_process");
+      execFileSync("pkill", ["-f", tempDir], { stdio: "ignore" });
+    } catch { /* no matching processes */ }
+    try {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+      fs.rmSync(boardDir, { recursive: true, force: true });
+    } catch { /* non-critical */ }
+  });
+
+  const agentLines = formatAgentLines(leadSpec.name);
+  sysMsg(setMessages,
+    `Team "${teamName}" — ${agentSpecs.length} agents active.\n` +
+    `${workerCommands.length} worker panes in Terminal.app + lead coordinating here.\n` +
+    `${agentLines.join("\n")}\n` +
+    `Click the lead pane to switch back. Shift+Cmd+D to close a split pane.\n` +
+    `/team stop to shut down all agents.`,
   );
   return leadCoordinationTask;
 }

@@ -27,6 +27,10 @@
 
 AemeathCLI orchestrates **multiple AI models** across **parallel agent teams** in your terminal. Route Claude for planning, GPT for coding, Gemini for reviews -- with real-time streaming, tmux-backed visual orchestration when enabled, cost tracking, and enterprise-grade security.
 
+<p align="center">
+  <img src="site/screenshots/home.jpg" alt="AemeathCLI launch screen" width="720" />
+</p>
+
 <br />
 
 ## Table of Contents
@@ -90,7 +94,7 @@ That's it. AemeathCLI detects your project, picks the best model, and starts str
 
 - **Node.js** >= 20.0.0
 - **npm** >= 9 (or pnpm / yarn)
-- **tmux** (optional, for external split-panel swarm panes)
+- **tmux** (optional, for Linux split-panel swarm panes; macOS and Windows use native terminal splits)
 - Native build tools for Node modules such as `node-pty` and `better-sqlite3`
   - macOS: Xcode Command Line Tools
   - Linux: Python, make, and a C/C++ compiler
@@ -207,7 +211,7 @@ Inside the TUI:
 - Press `Shift+Tab` to switch into swarm mode.
 - The onboarding flow detects supported native agent CLIs and stores your preferred master provider.
 - The master agent owns the left half of the split layout; worker agents stack on the right.
-- When tmux or iTerm2 is available, AemeathCLI can project the swarm into native panes while keeping the same hub-and-spoke model.
+- AemeathCLI automatically detects your terminal and projects the swarm into native split panes (iTerm2, Ghostty, Terminal.app on macOS; Windows Terminal on Windows; tmux on Linux) while keeping the same hub-and-spoke model.
 
 SDK-backed swarm planning still needs a tool-calling-capable provider, so browser login alone may not be enough; configure an API key or environment variable for the provider you want to sponsor the swarm.
 
@@ -298,16 +302,34 @@ Create parallel agent teams through the default swarm experience. The master age
 
 1. **Master-led orchestration** -- Start `aemeathcli`, press `Shift+Tab`, and describe the task. The configured master agent decomposes the work.
 2. **Profile-driven delegation** -- The supervisor chooses specialized worker profiles such as `developer`, `reviewer`, `tester`, and `architect`.
-3. **Split-panel mode** -- Each worker can get its own terminal pane (tmux today; interactive chat still supports natural-language team creation flows).
+3. **Split-panel mode** -- Each worker gets its own native terminal pane. Supports iTerm2, Ghostty, macOS Terminal.app, Windows Terminal, and tmux.
 4. **Hub-and-spoke coordination** -- A lead agent orchestrates the effort. Workers execute bounded tasks and results are synthesized by the supervisor.
 5. **Cross-model teams** -- Different providers can be assigned per worker: Claude for planning, Codex for coding, Gemini for documentation and testing.
 
 ### Split-Panel Backends
 
+AemeathCLI auto-detects your terminal and picks the best split backend:
+
 | Environment | Backend | How |
 |:------------|:--------|:----|
-| **macOS / Linux with tmux** | tmux panes | Creates or reuses a tmux session for each worker pane |
-| **No tmux available** | Single-pane mode | Orchestrator still runs without the visual overlay |
+| **macOS — iTerm2** | AppleScript | Splits sessions via iTerm2's native AppleScript dictionary |
+| **macOS — Ghostty** | System Events | Simulates Ghostty keybindings (Cmd+D / Cmd+Shift+D) for hub-spoke splits |
+| **macOS — Terminal.app** | System Events | Simulates Cmd+D to create native split panes |
+| **Windows — Windows Terminal** | wt.exe | Uses `wt split-pane` commands for hub-spoke layout |
+| **Linux (any terminal)** | tmux | Creates or reuses a tmux session with split panes |
+| **Fallback** | In-process | Tab-switchable agent panels when no native pane support is detected |
+
+#### macOS — iTerm2 Split Panel
+
+<p align="center">
+  <img src="site/screenshots/mac-splitpanel.jpg" alt="iTerm2 split panel mode on macOS" width="720" />
+</p>
+
+#### Windows Terminal Split Panel
+
+<p align="center">
+  <img src="site/screenshots/win-splitpanel.jpg" alt="Windows Terminal split panel mode" width="720" />
+</p>
 
 ### Hub-and-Spoke Coordination
 
@@ -529,7 +551,7 @@ aemeathcli/
     tools/         Built-in tools (bash, read, write, edit, glob, grep, git, web-fetch)
     auth/          OAuth PKCE login, credential store, session management
     teams/         Agent process management, message bus, task store
-    panes/         tmux/iTerm2 integration, IPC hub, layout engine
+    panes/         Split-pane backends (iTerm2, Ghostty, Terminal.app, Windows Terminal, tmux), IPC hub, layout engine
     skills/        Skill loader, registry, executor
     mcp/           MCP client, server manager, tool bridge
     storage/       SQLite store, config store, conversation persistence

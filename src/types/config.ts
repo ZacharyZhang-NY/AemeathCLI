@@ -25,7 +25,7 @@ export interface IPermissionConfig {
 
 // ── Split Panel Configuration ────────────────────────────────────────────
 
-export type PaneBackend = "tmux" | "iterm2";
+export type PaneBackend = "tmux" | "iterm2" | "ghostty" | "terminal-app";
 
 export interface ISplitPanelConfig {
   readonly enabled: boolean;
