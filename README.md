@@ -615,17 +615,6 @@ npm run test           # Vitest
 npm run test:coverage  # With coverage report
 ```
 
-### Project Conventions
-
-- **Interfaces** use `I` prefix: `IModelInfo`, `IChatMessage`, `IToolResult`
-- **Error classes** extend `AemeathError` with structured error codes
-- **Type imports** use `import type { ... }` consistently
-- **No `any`** -- enforced by ESLint `no-explicit-any` + `no-unsafe-*` rules
-- **All `catch` blocks** use `catch (error: unknown)` or bare `catch {}`
-- **Barrel exports** via `index.ts` in each module
-
-<br />
-
 ## License
 
 MIT
