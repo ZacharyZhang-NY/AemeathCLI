@@ -4,7 +4,7 @@
  */
 
 import React from "react";
-import { Box, Text } from "ink";
+import { Box, Text, useStdout } from "ink";
 import { BRAND_COLOR, colors } from "../theme.js";
 
 interface IStatusBarProps {
@@ -39,6 +39,20 @@ export function StatusBar({
   gitBranch,
   gitChanges,
 }: IStatusBarProps): React.ReactElement {
+  const { stdout } = useStdout();
+  const width = (stdout.columns as number | undefined) ?? 120;
+
+  // Progressive collapsing based on terminal width:
+  //   > 100 : everything visible
+  //   > 80  : drop role
+  //   > 60  : drop git info
+  //   > 45  : drop token count
+  //   <= 45 : brand + model only
+  const showRole = width > 100 && !!role;
+  const showGit = width > 60 && !!gitBranch;
+  const showTokens = width > 45;
+  const showCost = width > 45;
+
   return (
     <Box borderStyle="round" borderColor={colors.border.dim} paddingX={1}>
       <Text color={BRAND_COLOR} bold>
@@ -53,20 +67,28 @@ export function StatusBar({
         {shortModelLabel(model)}
       </Text>
 
-      {role ? (
+      {showRole ? (
         <>
           <Text color={colors.text.muted}>{SEP}</Text>
           <Text color={colors.role.tool}>{role}</Text>
         </>
       ) : null}
 
-      <Text color={colors.text.muted}>{SEP}</Text>
-      <Text color={colors.text.secondary}>{tokenCount} tok</Text>
+      {showTokens ? (
+        <>
+          <Text color={colors.text.muted}>{SEP}</Text>
+          <Text color={colors.text.secondary}>{tokenCount} tok</Text>
+        </>
+      ) : null}
 
-      <Text color={colors.text.muted}>{SEP}</Text>
-      <Text color={colors.status.success}>{cost}</Text>
+      {showCost ? (
+        <>
+          <Text color={colors.text.muted}>{SEP}</Text>
+          <Text color={colors.status.success}>{cost}</Text>
+        </>
+      ) : null}
 
-      {gitBranch ? (
+      {showGit ? (
         <>
           <Text color={colors.text.muted}>{SEP}</Text>
           <Text color={colors.status.info}>

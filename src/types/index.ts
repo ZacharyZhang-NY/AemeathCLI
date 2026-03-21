@@ -109,3 +109,18 @@ export type {
   MCPError,
   AnyAemeathError,
 } from "./errors.js";
+
+export type {
+  ColorDepth,
+  BackgroundMode,
+  ITerminalCapabilities,
+  IShimmerConfig,
+  IStreamingLineState,
+  IDiffHunk,
+  IDiffLine,
+  ApprovalType,
+  ApprovalDecision,
+  IApprovalRequest,
+  IAdaptiveColor,
+  IAdaptiveTheme,
+} from "./terminal.js";

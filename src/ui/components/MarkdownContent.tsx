@@ -203,15 +203,32 @@ function InlineMarkdown({
       continue;
     }
 
-    // [text](url)
+    // [text](url) — show both label and URL for clickability
     const linkMatch = remaining.match(/^\[([^\]]+)\]\(([^)]+)\)/);
     if (linkMatch) {
+      const linkLabel = linkMatch[1] ?? "";
+      const linkUrl = linkMatch[2] ?? "";
+      // Show label as underlined link; if URL is a local file path, show it instead
+      const isLocalPath = linkUrl.startsWith("/") || linkUrl.startsWith("./") || linkUrl.startsWith("../");
+      const displayText = isLocalPath ? linkUrl : linkLabel;
       segments.push(
         <Text key={key++} color={colors.status.info} underline>
-          {linkMatch[1]}
+          {displayText}
         </Text>,
       );
       remaining = remaining.slice(linkMatch[0].length);
+      continue;
+    }
+
+    // Bare URLs — preserve on single line for terminal clickability
+    const bareUrlMatch = remaining.match(/^(https?:\/\/[^\s)>\]]+)/);
+    if (bareUrlMatch) {
+      segments.push(
+        <Text key={key++} color={colors.status.info} underline>
+          {bareUrlMatch[1]}
+        </Text>,
+      );
+      remaining = remaining.slice(bareUrlMatch[0].length);
       continue;
     }
 

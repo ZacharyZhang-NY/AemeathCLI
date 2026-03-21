@@ -2,11 +2,15 @@
  * Streaming response hook with tool-call state tracking.
  * Handles real-time token-by-token output from AI models
  * and provides structured tool execution state for UI rendering.
+ *
+ * Uses a newline-gated streaming controller to prevent mid-word
+ * reflows — partial lines buffer until \n arrives.
  */
 
 import { useState, useCallback, useRef } from "react";
 import type { IStreamChunk, ITokenUsage } from "../../types/index.js";
 import type { ToolStatus } from "../components/ToolCallDisplay.js";
+import { createStreamingController, type StreamingController } from "../streaming-controller.js";
 
 export interface IToolCallState {
   readonly id: string;
@@ -19,7 +23,10 @@ export interface IToolCallState {
 
 interface IStreamState {
   readonly isStreaming: boolean;
+  /** Committed (complete) lines — safe to render without reflow */
   readonly content: string;
+  /** Partial line not yet terminated by \n — shown with pending style */
+  readonly pendingLine: string;
   readonly usage: ITokenUsage | undefined;
   readonly error: string | undefined;
   readonly activity: string | undefined;
@@ -27,6 +34,8 @@ interface IStreamState {
   readonly toolCalls: readonly IToolCallState[];
   /** Timestamp when streaming began. */
   readonly startTime: number | undefined;
+  /** Whether the stream is paused (e.g. rate-limited) */
+  readonly isPaused: boolean;
 }
 
 interface IUseStreamReturn {
@@ -89,27 +98,34 @@ export function useStream(): IUseStreamReturn {
   const [state, setState] = useState<IStreamState>({
     isStreaming: false,
     content: "",
+    pendingLine: "",
     usage: undefined,
     error: undefined,
     activity: undefined,
     toolCalls: [],
     startTime: undefined,
+    isPaused: false,
   });
 
   const cancelRef = useRef(false);
+  const streamingCtrlRef = useRef<StreamingController | null>(null);
   const isCancelled = (): boolean => cancelRef.current;
 
   const startStream = useCallback(
     async (stream: AsyncIterable<IStreamChunk>) => {
       cancelRef.current = false;
+      const ctrl = createStreamingController();
+      streamingCtrlRef.current = ctrl;
       setState({
         isStreaming: true,
         content: "",
+        pendingLine: "",
         usage: undefined,
         error: undefined,
         activity: undefined,
         toolCalls: [],
         startTime: Date.now(),
+        isPaused: false,
       });
 
       try {
@@ -120,9 +136,13 @@ export function useStream(): IUseStreamReturn {
             case "text":
               if (chunk.content !== undefined) {
                 const text = chunk.content;
+                // Feed through newline-gated streaming controller
+                ctrl.push(text);
+                const ctrlState = ctrl.getState();
                 setState((prev) => ({
                   ...prev,
-                  content: prev.content + text,
+                  content: ctrlState.committedLines.map((l) => l.text).join("\n"),
+                  pendingLine: ctrlState.pendingLine,
                   activity: undefined,
                 }));
               }
@@ -189,12 +209,18 @@ export function useStream(): IUseStreamReturn {
               }));
               return;
 
-            case "done":
+            case "done": {
+              // Flush any remaining buffered content
+              ctrl.flush();
+              const finalState = ctrl.getState();
               setState((prev) => ({
                 ...prev,
                 isStreaming: false,
+                content: finalState.committedLines.map((l) => l.text).join("\n"),
+                pendingLine: "",
                 usage: chunk.usage ?? prev.usage,
                 activity: undefined,
+                isPaused: false,
                 toolCalls: prev.toolCalls.map((tc) =>
                   tc.status === "executing"
                     ? {
@@ -206,13 +232,20 @@ export function useStream(): IUseStreamReturn {
                 ),
               }));
               return;
+            }
           }
         }
 
+        // Stream ended without explicit "done" — flush remaining
+        ctrl.flush();
+        const endState = ctrl.getState();
         setState((prev) => ({
           ...prev,
           isStreaming: false,
+          content: endState.committedLines.map((l) => l.text).join("\n"),
+          pendingLine: "",
           activity: undefined,
+          isPaused: false,
           toolCalls: prev.toolCalls.map((tc) =>
             tc.status === "executing"
               ? {
@@ -229,6 +262,7 @@ export function useStream(): IUseStreamReturn {
           isStreaming: false,
           error: error instanceof Error ? error.message : String(error),
           activity: undefined,
+          isPaused: false,
         }));
       }
     },
@@ -237,31 +271,58 @@ export function useStream(): IUseStreamReturn {
 
   const cancelStream = useCallback(() => {
     cancelRef.current = true;
-    setState((prev) => ({
-      ...prev,
-      isStreaming: false,
-      toolCalls: prev.toolCalls.map((tc) =>
-        tc.status === "executing"
-          ? {
-              ...tc,
-              status: "cancelled" as const,
-              endTime: Date.now(),
-            }
-          : tc,
-      ),
-    }));
+    // Flush remaining content before cancelling
+    const ctrl = streamingCtrlRef.current;
+    if (ctrl) {
+      ctrl.flush();
+      const finalState = ctrl.getState();
+      setState((prev) => ({
+        ...prev,
+        isStreaming: false,
+        content: finalState.committedLines.map((l) => l.text).join("\n"),
+        pendingLine: "",
+        isPaused: false,
+        toolCalls: prev.toolCalls.map((tc) =>
+          tc.status === "executing"
+            ? {
+                ...tc,
+                status: "cancelled" as const,
+                endTime: Date.now(),
+              }
+            : tc,
+        ),
+      }));
+    } else {
+      setState((prev) => ({
+        ...prev,
+        isStreaming: false,
+        isPaused: false,
+        toolCalls: prev.toolCalls.map((tc) =>
+          tc.status === "executing"
+            ? {
+                ...tc,
+                status: "cancelled" as const,
+                endTime: Date.now(),
+              }
+            : tc,
+        ),
+      }));
+    }
   }, []);
 
   const reset = useCallback(() => {
     cancelRef.current = true;
+    streamingCtrlRef.current = null;
     setState({
       isStreaming: false,
       content: "",
+      pendingLine: "",
       usage: undefined,
       error: undefined,
       activity: undefined,
       toolCalls: [],
       startTime: undefined,
+      isPaused: false,
     });
   }, []);
 

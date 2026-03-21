@@ -1,12 +1,14 @@
 /**
- * Animated spinner with multiple style variants.
- * Uses a single flat brand color — no gradients.
+ * Animated spinner with multiple style variants and optional shimmer effect.
+ * The shimmer creates a time-synchronized light sweep across the label text,
+ * matching the polish of Codex CLI's status indicators.
  */
 
-import React from "react";
+import React, { useMemo } from "react";
 import { Text } from "ink";
 import { BRAND_COLOR } from "../theme.js";
 import { useAnimationTick } from "../hooks/use-animation-tick.js";
+import { shimmerToInkSpans } from "../shimmer.js";
 
 interface IGradientSpinnerProps {
   /** Text displayed after the spinner character */
@@ -17,6 +19,8 @@ interface IGradientSpinnerProps {
   readonly variant?: "dots" | "braille" | "arc" | "pulse" | "bounce" | undefined;
   /** Per-frame interval override in ms */
   readonly speed?: number | undefined;
+  /** Enable shimmer sweep effect on the label text (default: false) */
+  readonly shimmer?: boolean | undefined;
 }
 
 const SPINNER_VARIANTS: Record<
@@ -45,11 +49,15 @@ const SPINNER_VARIANTS: Record<
   },
 };
 
+/** Shimmer refresh rate — 32ms ≈ 30fps for smooth sweep animation */
+const SHIMMER_INTERVAL_MS = 32;
+
 export function GradientSpinner({
   label,
   labelColor = "#888888",
   variant = "dots",
   speed,
+  shimmer = false,
 }: IGradientSpinnerProps): React.ReactElement {
   const spinnerDef = SPINNER_VARIANTS[variant] ?? SPINNER_VARIANTS["dots"];
   if (!spinnerDef) {
@@ -57,12 +65,38 @@ export function GradientSpinner({
   }
   const interval = speed ?? spinnerDef.interval;
   const tick = useAnimationTick(interval);
+  // Drive shimmer redraws at a faster rate for smooth animation
+  useAnimationTick(SHIMMER_INTERVAL_MS, shimmer && label !== undefined && label.length > 0);
   const frame = tick % spinnerDef.frames.length;
+
+  // Compute shimmer spans when enabled
+  const shimmerSpans = useMemo(() => {
+    if (!shimmer || !label) return null;
+    return shimmerToInkSpans(label, labelColor);
+  }, [shimmer, label, labelColor, tick]);
 
   return (
     <Text>
       <Text color={BRAND_COLOR}>{spinnerDef.frames[frame]}</Text>
-      {label ? <Text color={labelColor}> {label}</Text> : null}
+      {label ? (
+        shimmerSpans ? (
+          <Text>
+            {" "}
+            {shimmerSpans.map((span, i) => (
+              <Text
+                key={i}
+                color={span.color}
+                bold={span.bold}
+                dimColor={span.dim}
+              >
+                {span.text}
+              </Text>
+            ))}
+          </Text>
+        ) : (
+          <Text color={labelColor}> {label}</Text>
+        )
+      ) : null}
     </Text>
   );
 }

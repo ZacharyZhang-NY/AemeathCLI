@@ -134,6 +134,12 @@ export function InputBar({
   const previousHistoryIndexRef = useRef<number | undefined>(undefined);
   const historyCacheRef = useRef<Record<number, { text: string; cursorOffset: number }>>({});
 
+  // ── Paste detection refs ──────────────────────────────────
+  const lastInputTimeRef = useRef(0);
+  const pasteBufferRef = useRef('');
+  const pasteTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isPastingRef = useRef(false);
+
   const setInputWithCursor = useCallback(
     (nextInput: string, cursorPosition: "start" | "end" | number = "end") => {
       const nextCursor = cursorPosition === "start"
@@ -211,6 +217,23 @@ export function InputBar({
       });
     }
   }, [initialHistory]);
+
+  // ── Bracketed paste mode ──────────────────────────────────
+  // Enable bracketed paste on mount so the terminal wraps pasted text
+  // in escape sequences, preventing individual char handler triggers.
+  useEffect(() => {
+    process.stdout.write('\x1b[?2004h');
+    return () => {
+      process.stdout.write('\x1b[?2004l');
+    };
+  }, []);
+
+  // Clean up paste timeout on unmount to prevent memory leaks
+  useEffect(() => {
+    return () => {
+      if (pasteTimeoutRef.current) clearTimeout(pasteTimeoutRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     inputRef.current = input;
@@ -380,7 +403,35 @@ export function InputBar({
     if (key.ctrl && inputChar === "c") { process.exit(0); return; }
     if (key.ctrl && inputChar === "l") return;
 
+    // ── Paste burst detection ──────────────────────────────
+    // If multiple characters arrive within 5ms, treat as a paste rather
+    // than individual keystrokes. Accumulate into a buffer and flush
+    // once the burst stops, so autocomplete isn't triggered per-char.
     if (!key.ctrl && !key.meta && inputChar) {
+      const now = Date.now();
+      const timeSinceLastInput = now - lastInputTimeRef.current;
+      lastInputTimeRef.current = now;
+
+      if (timeSinceLastInput < 5) {
+        // Paste burst detected
+        isPastingRef.current = true;
+        pasteBufferRef.current += inputChar;
+
+        if (pasteTimeoutRef.current) clearTimeout(pasteTimeoutRef.current);
+        pasteTimeoutRef.current = setTimeout(() => {
+          // Flush paste buffer
+          const pasteText = pasteBufferRef.current;
+          pasteBufferRef.current = '';
+          isPastingRef.current = false;
+          if (pasteText) {
+            const result = insertTextAtCursor(inputRef.current, cursorOffsetRef.current, pasteText);
+            setInputWithCursor(result.text, result.cursorOffset);
+          }
+        }, 10);
+        return; // Don't process individual chars during paste
+      }
+
+      // Normal single-character typing
       const result = insertTextAtCursor(currentInput, currentCursorOffset, inputChar);
       setInputWithCursor(result.text, result.cursorOffset);
     }

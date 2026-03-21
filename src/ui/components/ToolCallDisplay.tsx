@@ -1,6 +1,6 @@
 /**
- * Rich tool execution visualization with animated status icons,
- * progress tracking, duration, and expandable output.
+ * Tool execution display with Codex-style head/tail output truncation
+ * and tree-branch visual prefixes for compact, readable output.
  */
 
 import React from "react";
@@ -25,7 +25,7 @@ interface IToolCallDisplayProps {
   readonly isCollapsed?: boolean | undefined;
 }
 
-/** Animated status icon */
+/** Status icon per execution state */
 function StatusIcon({
   status,
 }: {
@@ -45,35 +45,71 @@ function StatusIcon({
   }
 }
 
+/** Compact duration: 500ms, 1.5s, 1m 30s, 1h 23m 45s */
 function formatDuration(ms: number): string {
   if (ms < 1000) return `${ms}ms`;
-  return `${(ms / 1000).toFixed(1)}s`;
+  const totalSec = Math.floor(ms / 1000);
+  if (totalSec < 60) {
+    const frac = ms % 1000;
+    return frac >= 100 ? `${(ms / 1000).toFixed(1)}s` : `${totalSec}s`;
+  }
+  const minutes = Math.floor(totalSec / 60);
+  const seconds = totalSec % 60;
+  if (minutes < 60) {
+    return seconds > 0 ? `${minutes}m ${seconds}s` : `${minutes}m`;
+  }
+  const hours = Math.floor(minutes / 60);
+  const remainMin = minutes % 60;
+  return seconds > 0
+    ? `${hours}h ${remainMin}m ${seconds}s`
+    : `${hours}h ${remainMin}m`;
 }
 
-/** Map tool name to a descriptive icon character */
+const TOOL_ICONS: Readonly<Record<string, string>> = {
+  read: "\u{1F4C4}", write: "\u270F\uFE0F", edit: "\u{1F4DD}",
+  glob: "\u{1F50D}", grep: "\u{1F50E}", bash: "\u26A1",
+  web_search: "\u{1F310}", webSearch: "\u{1F310}",
+  web_fetch: "\u{1F4E1}", webFetch: "\u{1F4E1}",
+};
+
 function getToolIcon(name: string): string {
-  switch (name) {
-    case "read":
-      return "\u{1F4C4}";
-    case "write":
-      return "\u270F\uFE0F";
-    case "edit":
-      return "\u{1F4DD}";
-    case "glob":
-      return "\u{1F50D}";
-    case "grep":
-      return "\u{1F50E}";
-    case "bash":
-      return "\u26A1";
-    case "web_search":
-    case "webSearch":
-      return "\u{1F310}";
-    case "web_fetch":
-    case "webFetch":
-      return "\u{1F4E1}";
-    default:
-      return "\u2699";
+  return TOOL_ICONS[name] ?? "\u2699";
+}
+
+const HEAD_LINES = 5;
+const TAIL_LINES = 2;
+
+/** Build head/tail truncated lines with tree-branch prefixes */
+function formatOutputLines(raw: string): readonly string[] {
+  const allLines = raw.split("\n");
+  // Strip trailing empty line from final newline
+  if (allLines.length > 0 && allLines[allLines.length - 1] === "") {
+    allLines.pop();
   }
+  const total = allLines.length;
+
+  if (total <= HEAD_LINES + TAIL_LINES) {
+    return allLines.map((line, i) => {
+      const prefix = i === 0 ? "  \u2514 " : "    ";
+      return `${prefix}${line}`;
+    });
+  }
+
+  const head = allLines.slice(0, HEAD_LINES);
+  const tail = allLines.slice(total - TAIL_LINES);
+  const omitted = total - HEAD_LINES - TAIL_LINES;
+
+  const result: string[] = [];
+  head.forEach((line, i) => {
+    const prefix = i === 0 ? "  \u2514 " : "    ";
+    result.push(`${prefix}${line}`);
+  });
+  result.push(`    \u2026 +${omitted} lines`);
+  tail.forEach((line) => {
+    result.push(`    ${line}`);
+  });
+
+  return result;
 }
 
 export function ToolCallDisplay({
@@ -85,18 +121,11 @@ export function ToolCallDisplay({
   duration,
   isCollapsed = true,
 }: IToolCallDisplayProps): React.ReactElement {
-  const borderColor =
-    status === "error"
-      ? colors.status.error
-      : status === "executing"
-        ? colors.status.active
-        : colors.border.dim;
-
   const icon = getToolIcon(toolName);
 
   return (
     <Box flexDirection="column" marginY={0}>
-      {/* Header line: status-icon  tool-icon tool-name  description  (duration) */}
+      {/* Header: status-icon  tool-icon tool-name  description  (duration) */}
       <Box>
         <StatusIcon status={status} />
         <Text> </Text>
@@ -114,27 +143,19 @@ export function ToolCallDisplay({
         ) : null}
       </Box>
 
-      {/* Expandable output section */}
+      {/* Tree-branch output with head/tail truncation */}
       {!isCollapsed && output ? (
-        <Box
-          flexDirection="column"
-          marginLeft={2}
-          borderStyle="single"
-          borderLeft
-          borderRight={false}
-          borderTop={false}
-          borderBottom={false}
-          borderColor={borderColor}
-          paddingLeft={1}
-        >
-          <Text
-            wrap="wrap"
-            color={isError ? colors.status.error : colors.text.secondary}
-          >
-            {output.length > 2000
-              ? output.slice(0, 2000) + "\n\u2026 (truncated)"
-              : output}
-          </Text>
+        <Box flexDirection="column">
+          {formatOutputLines(output).map((line, i) => (
+            <Text
+              key={i}
+              wrap="truncate"
+              dimColor
+              color={isError ? colors.status.error : colors.text.secondary}
+            >
+              {line}
+            </Text>
+          ))}
         </Box>
       ) : null}
     </Box>
