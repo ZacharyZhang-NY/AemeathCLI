@@ -8,7 +8,7 @@ import { z } from "zod";
 import { logger } from "../utils/logger.js";
 import { getMCPConfigPath, getProjectMCPConfigPath } from "../utils/pathResolver.js";
 import { InvalidConfigError } from "../types/errors.js";
-import type { IMCPConfig, IMCPServerConfig } from "../types/config.js";
+import type { IMCPConfig, IMCPServerConfig } from "../types/mcp.js";
 
 // ── Zod Validation Schema ───────────────────────────────────────────────
 

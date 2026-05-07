@@ -1,33 +1,33 @@
-/**
- * Authentication management commands per PRD section 13.2
- */
-
 import { Command } from "commander";
 import pc from "picocolors";
-import type { ProviderName } from "../../types/index.js";
+import { select } from "@inquirer/prompts";
+import { loadGlobalConfigFile, saveGlobalConfig } from "../../config/persist.js";
+import type { ProviderName } from "../../types/model.js";
 import {
-  LOGIN_PROVIDERS,
-  type LoginProvider,
-  getAuthStatusRecord,
   formatDetailedAuthStatusLine,
-} from "../../auth/auth-status.js";
+  getAuthStatusRecord,
+  getAuthStatusRecords,
+  loginProvider,
+  logoutProvider,
+  setProviderApiKey,
+  type LoginProvider,
+} from "../auth-runtime.js";
 
-const VALID_PROVIDERS = LOGIN_PROVIDERS;
+const VALID_PROVIDERS: readonly LoginProvider[] = ["claude", "codex", "gemini", "kimi"];
 
 function isValidProvider(value: string): value is LoginProvider {
   return (VALID_PROVIDERS as readonly string[]).includes(value);
-}
-
-function isInteractiveTerminal(): boolean {
-  return process.stdin.isTTY && process.stdout.isTTY;
 }
 
 function validProvidersMessage(): string {
   return VALID_PROVIDERS.join(", ");
 }
 
+function isInteractiveTerminal(): boolean {
+  return process.stdin.isTTY && process.stdout.isTTY;
+}
+
 async function promptForProvider(): Promise<LoginProvider> {
-  const { select } = await import("@inquirer/prompts");
   return select<LoginProvider>({
     message: "Select a provider to log in to:",
     choices: [
@@ -50,9 +50,7 @@ async function readSecretFromStdin(): Promise<string> {
 async function resolveLoginProvider(providerArg: string | undefined): Promise<LoginProvider | undefined> {
   if (providerArg !== undefined) {
     if (!isValidProvider(providerArg)) {
-      process.stderr.write(
-        pc.red(`Unknown provider: "${providerArg}". Valid: ${validProvidersMessage()}\n`),
-      );
+      process.stderr.write(pc.red(`Unknown provider: "${providerArg}". Valid: ${validProvidersMessage()}\n`));
       process.exitCode = 2;
       return undefined;
     }
@@ -61,9 +59,7 @@ async function resolveLoginProvider(providerArg: string | undefined): Promise<Lo
 
   if (!isInteractiveTerminal()) {
     process.stderr.write(
-      pc.red(
-        "Interactive provider selection requires a TTY. Use `aemeathcli auth login <provider>` or `aemeathcli auth set-key <provider> --stdin`.\n",
-      ),
+      pc.red("Interactive provider selection requires a TTY. Use `aemeathcli auth login <provider>`.\n"),
     );
     process.exitCode = 2;
     return undefined;
@@ -74,9 +70,7 @@ async function resolveLoginProvider(providerArg: string | undefined): Promise<Lo
 
 async function runLoginFlow(provider: LoginProvider): Promise<void> {
   process.stdout.write(pc.cyan(`Logging in to ${provider}...\n`));
-
-  const loginModule = await loadLoginModule(provider);
-  await loginModule.login();
+  await loginProvider(provider);
   process.stdout.write(pc.green(`Successfully logged in to ${provider}\n`));
 }
 
@@ -84,14 +78,9 @@ const PROVIDER_MODEL_SWITCH: Readonly<Record<LoginProvider, { provider: Provider
   claude: { provider: "anthropic", model: "claude-sonnet-4-6" },
   codex: { provider: "openai", model: "gpt-5.2" },
   gemini: { provider: "google", model: "gemini-2.5-pro" },
-  kimi: { provider: "kimi", model: "kimi-for-coding" },
+  kimi: { provider: "kimi", model: "kimi-k2.5" },
 };
 
-/**
- * Top-level `login` command with interactive provider selection.
- * Shows an arrow-key navigable list of providers, then triggers
- * browser-based login for the selected one.
- */
 export function createLoginCommand(): Command {
   return new Command("login")
     .description("Log in to a provider (interactive)")
@@ -113,8 +102,7 @@ export function createLoginCommand(): Command {
 }
 
 export function createAuthCommand(): Command {
-  const auth = new Command("auth")
-    .description("Authentication & account management");
+  const auth = new Command("auth").description("Authentication & account management");
 
   auth
     .command("login [provider]")
@@ -138,46 +126,31 @@ export function createAuthCommand(): Command {
     .command("logout [provider]")
     .description("Log out of a provider (or all with --all)")
     .option("--all", "Log out of all providers")
-    .action(async (provider: string | undefined, options: { all?: boolean }) => {
+    .action((provider: string | undefined, options: { all?: boolean }) => {
       if (options.all) {
-        for (const p of VALID_PROVIDERS) {
-          try {
-            const loginModule = await loadLoginModule(p);
-            await loginModule.logout();
-            process.stdout.write(pc.green(`Logged out of ${p}\n`));
-          } catch {
-            // Some may not be logged in
-          }
+        for (const item of VALID_PROVIDERS) {
+          logoutProvider(item);
+          process.stdout.write(pc.green(`Logged out of ${item}\n`));
         }
         return;
       }
 
       if (!provider || !isValidProvider(provider)) {
-        process.stderr.write(
-          pc.red(`Specify a provider or use --all. Valid: ${VALID_PROVIDERS.join(", ")}\n`),
-        );
+        process.stderr.write(pc.red(`Specify a provider or use --all. Valid: ${validProvidersMessage()}\n`));
         process.exitCode = 2;
         return;
       }
 
-      try {
-        const loginModule = await loadLoginModule(provider);
-        await loginModule.logout();
-        process.stdout.write(pc.green(`Logged out of ${provider}\n`));
-      } catch (error: unknown) {
-        const message = error instanceof Error ? error.message : String(error);
-        process.stderr.write(pc.red(`Logout failed: ${message}\n`));
-        process.exitCode = 3;
-      }
+      logoutProvider(provider);
+      process.stdout.write(pc.green(`Logged out of ${provider}\n`));
     });
 
   auth
     .command("status")
     .description("Show login status for all providers")
     .option("--json", "Output machine-readable JSON")
-    .action(async (options: { json?: boolean }) => {
-      const records = await Promise.all(VALID_PROVIDERS.map(async (provider) => getAuthStatusRecord(provider)));
-
+    .action((options: { json?: boolean }) => {
+      const records = getAuthStatusRecords();
       if (options.json) {
         process.stdout.write(`${JSON.stringify({ providers: records }, null, 2)}\n`);
         return;
@@ -191,114 +164,63 @@ export function createAuthCommand(): Command {
 
   auth
     .command("set-key <provider> [key]")
-    .description("Set an API key for a provider (fallback for CI/headless)")
+    .description("Set an API key for a provider")
     .option("--stdin", "Read the API key from stdin")
     .action(async (provider: string, key: string | undefined, options: { stdin?: boolean }) => {
-      if (!isValidProvider(provider) && provider !== "openai" && provider !== "google") {
-        process.stderr.write(pc.red(`Unknown provider: "${provider}"\n`));
+      if (!isValidProvider(provider)) {
+        process.stderr.write(pc.red(`Unknown provider: "${provider}". Valid: ${validProvidersMessage()}\n`));
         process.exitCode = 2;
         return;
       }
 
       const resolvedKey = options.stdin ? await readSecretFromStdin() : key;
       if (!resolvedKey) {
-        process.stderr.write(
-          pc.red("Provide an API key argument or use --stdin to read it from standard input.\n"),
-        );
+        process.stderr.write(pc.red("Provide an API key argument or use --stdin.\n"));
         process.exitCode = 2;
         return;
       }
 
-      try {
-        const { ApiKeyFallback } = await import("../../auth/api-key-fallback.js");
-        const fallback = new ApiKeyFallback();
-        const providerMap: Record<string, ProviderName> = {
-          claude: "anthropic",
-          openai: "openai",
-          codex: "openai",
-          gemini: "google",
-          google: "google",
-          kimi: "kimi",
-        };
-        const mappedProvider = providerMap[provider];
-        if (mappedProvider) {
-          await fallback.setKey(mappedProvider, resolvedKey);
-          process.stdout.write(pc.green(`API key set for ${provider}\n`));
-        }
-      } catch (error: unknown) {
-        const message = error instanceof Error ? error.message : String(error);
-        process.stderr.write(pc.red(`Failed to set key: ${message}\n`));
-        process.exitCode = 3;
-      }
+      setProviderApiKey(provider, resolvedKey);
+      process.stdout.write(pc.green(`API key set for ${provider}\n`));
     });
 
   auth
     .command("switch <provider>")
     .description("Set a provider as the default")
-    .action(async (provider: string) => {
+    .action((provider: string) => {
       if (!isValidProvider(provider)) {
-        process.stderr.write(
-          pc.red(`Unknown provider: "${provider}". Valid: ${VALID_PROVIDERS.join(", ")}\n`),
-        );
+        process.stderr.write(pc.red(`Unknown provider: "${provider}". Valid: ${validProvidersMessage()}\n`));
         process.exitCode = 2;
         return;
       }
 
-      try {
-        const target = PROVIDER_MODEL_SWITCH[provider];
-        const { ConfigStore } = await import("../../storage/config-store.js");
-        const store = new ConfigStore();
-        const cfg = store.loadGlobal();
-
-        const nextConfig = {
-          ...cfg,
-          defaultModel: target.model,
-          providers: {
-            ...cfg.providers,
-            [target.provider]: {
-              ...(cfg.providers[target.provider] ?? {}),
-              enabled: true,
-            },
+      const target = PROVIDER_MODEL_SWITCH[provider];
+      const current = loadGlobalConfigFile();
+      saveGlobalConfig({
+        ...current,
+        roles: {
+          ...current.roles,
+          coding: {
+            ...current.roles.coding,
+            primary: target.model,
           },
-        };
+        },
+      });
+      process.stdout.write(pc.green(`Default provider switched to ${provider} (model: ${target.model})\n`));
+    });
 
-        store.saveGlobal(nextConfig);
-        process.stdout.write(
-          pc.green(`Default provider switched to ${provider} (model: ${target.model})\n`),
-        );
-      } catch (error: unknown) {
-        const message = error instanceof Error ? error.message : String(error);
-        process.stderr.write(pc.red(`Failed to switch provider: ${message}\n`));
-        process.exitCode = 3;
+  auth
+    .command("whoami <provider>")
+    .description("Show status for one provider")
+    .action((provider: string) => {
+      if (!isValidProvider(provider)) {
+        process.stderr.write(pc.red(`Unknown provider: "${provider}". Valid: ${validProvidersMessage()}\n`));
+        process.exitCode = 2;
+        return;
       }
+      const record = getAuthStatusRecord(provider);
+      process.stdout.write(`${formatDetailedAuthStatusLine(record)}\n`);
     });
 
   return auth;
-}
-
-interface ILoginModule {
-  login(): Promise<unknown>;
-  logout(): Promise<void>;
-  getStatus(): Promise<{ loggedIn: boolean; email?: string | undefined; plan?: string | undefined }>;
-}
-
-async function loadLoginModule(provider: LoginProvider): Promise<ILoginModule> {
-  switch (provider) {
-    case "claude": {
-      const mod = await import("../../auth/providers/claude-login.js");
-      return new mod.ClaudeLogin();
-    }
-    case "codex": {
-      const mod = await import("../../auth/providers/codex-login.js");
-      return new mod.CodexLogin();
-    }
-    case "gemini": {
-      const mod = await import("../../auth/providers/gemini-login.js");
-      return new mod.GeminiLogin();
-    }
-    case "kimi": {
-      const mod = await import("../../auth/providers/kimi-login.js");
-      return new mod.KimiLogin();
-    }
-  }
 }

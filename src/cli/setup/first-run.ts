@@ -2,13 +2,14 @@ import { existsSync } from "node:fs";
 
 import pc from "picocolors";
 
-import type { CliProviderType } from "../../orchestrator/constants.js";
 import { CLI_PROVIDER_ORDER, getCliProviderEntry, type LoginProvider } from "../../orchestrator/utils/provider-catalog.js";
 import { detectInstalledProviders } from "../../orchestrator/utils/detect-providers.js";
-import { ConfigStore } from "../../storage/config-store.js";
-import { DEFAULT_CONFIG, type IGlobalConfig } from "../../types/config.js";
+import { DEFAULT_AEMEATH_CONFIG } from "../../config/defaults.js";
+import { loadGlobalConfigFile, saveGlobalConfig } from "../../config/persist.js";
+import type { AemeathConfig } from "../../config/schema.js";
 import { getConfigPath } from "../../utils/pathResolver.js";
 import { PACKAGE_VERSION } from "../../version.js";
+import { loginProvider, type LoginProvider as RuntimeLoginProvider } from "../auth-runtime.js";
 
 interface IFirstRunLogin {
   login(): Promise<unknown>;
@@ -22,7 +23,7 @@ export interface FirstRunSetupOptions {
 export interface FirstRunSetupResult {
   readonly configPath: string;
   readonly created: boolean;
-  readonly config: IGlobalConfig;
+  readonly config: AemeathConfig;
 }
 
 export function hasGlobalConfig(): boolean {
@@ -33,28 +34,25 @@ export function isInteractiveTerminal(): boolean {
   return process.stdin.isTTY && process.stdout.isTTY;
 }
 
-export function createInitialConfig(): IGlobalConfig {
+export function createInitialConfig(): AemeathConfig {
   return {
-    ...DEFAULT_CONFIG,
+    ...DEFAULT_AEMEATH_CONFIG,
     version: PACKAGE_VERSION,
   };
 }
 
 export function ensureDefaultConfig(): FirstRunSetupResult {
-  const store = new ConfigStore();
   const configPath = getConfigPath();
-
   if (hasGlobalConfig()) {
     return {
       configPath,
       created: false,
-      config: store.loadGlobal(),
+      config: loadGlobalConfigFile(),
     };
   }
 
   const config = createInitialConfig();
-  store.saveGlobal(config);
-
+  saveGlobalConfig(config);
   return {
     configPath,
     created: true,
@@ -62,25 +60,11 @@ export function ensureDefaultConfig(): FirstRunSetupResult {
   };
 }
 
-async function createFirstRunLogin(provider: LoginProvider): Promise<IFirstRunLogin> {
-  switch (provider) {
-    case "claude": {
-      const { ClaudeLogin } = await import("../../auth/providers/claude-login.js");
-      return new ClaudeLogin();
-    }
-    case "codex": {
-      const { CodexLogin } = await import("../../auth/providers/codex-login.js");
-      return new CodexLogin();
-    }
-    case "gemini": {
-      const { GeminiLogin } = await import("../../auth/providers/gemini-login.js");
-      return new GeminiLogin();
-    }
-    case "kimi": {
-      const { KimiLogin } = await import("../../auth/providers/kimi-login.js");
-      return new KimiLogin();
-    }
-  }
+function createFirstRunLogin(provider: LoginProvider): IFirstRunLogin {
+  const runtimeProvider = provider as RuntimeLoginProvider;
+  return {
+    login: () => loginProvider(runtimeProvider),
+  };
 }
 
 function writeWelcomeBanner(): void {
@@ -103,44 +87,31 @@ export async function runFirstRunSetup(
 ): Promise<FirstRunSetupResult> {
   const configPath = getConfigPath();
   if (hasGlobalConfig() && !options.force) {
-    const store = new ConfigStore();
     return {
       configPath,
       created: false,
-      config: store.loadGlobal(),
+      config: loadGlobalConfigFile(),
     };
   }
 
-  const store = new ConfigStore();
   const config = createInitialConfig();
   const detectedProviders = detectInstalledProviders();
 
   if (options.defaults || !isInteractiveTerminal()) {
-    const defaultPrimaryMasterProvider = detectedProviders[0];
-    const configWithDefaults: IGlobalConfig = {
-      ...config,
-      swarm: {
-        onboardingComplete: true,
-        detectedProviders,
-        primaryMasterProvider: defaultPrimaryMasterProvider,
-        fallbackMasterProviders: detectedProviders.slice(1),
-      },
-    };
-    store.saveGlobal(configWithDefaults);
-
+    saveGlobalConfig(config);
     const modeLabel = options.defaults ? "defaults" : "non-interactive defaults";
-    process.stdout.write(
-      `${pc.green("✓")} Saved ${modeLabel} to ${pc.cyan(configPath)}\n`,
-    );
-
+    process.stdout.write(`${pc.green("✓")} Saved ${modeLabel} to ${pc.cyan(configPath)}\n`);
+    if (detectedProviders.length > 0) {
+      process.stdout.write(`Detected providers: ${detectedProviders.join(", ")}\n`);
+    }
     return {
       configPath,
       created: true,
-      config: configWithDefaults,
+      config,
     };
   }
 
-  const { checkbox, confirm, select } = await import("@inquirer/prompts");
+  const { checkbox, confirm } = await import("@inquirer/prompts");
 
   writeWelcomeBanner();
 
@@ -157,12 +128,10 @@ export async function runFirstRunSetup(
       if (entry.loginProvider === undefined) {
         return undefined;
       }
-
-      const installed = detectedProviders.includes(provider);
       return {
-        name: `${entry.label}${installed ? "" : " (not detected, login only)"}`,
+        name: `${entry.label}${detectedProviders.includes(provider) ? "" : " (not detected, login only)"}`,
         value: entry.loginProvider,
-        checked: installed && provider !== "kimi-cli",
+        checked: detectedProviders.includes(provider) && provider !== "kimi-cli",
       };
     })
     .filter((choice): choice is { name: string; value: LoginProvider; checked: boolean } => choice !== undefined);
@@ -175,97 +144,28 @@ export async function runFirstRunSetup(
   for (const provider of selectedLoginProviders) {
     process.stdout.write(pc.cyan(`  Logging in to ${provider}...\n`));
     try {
-      const login = await createFirstRunLogin(provider);
+      const login = createFirstRunLogin(provider);
       await login.login();
       process.stdout.write(pc.green(`  ✓ ${provider} — Logged in successfully\n`));
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
-      process.stdout.write(pc.yellow(`  ! ${provider} — Login skipped: ${message}\n`));
+      process.stdout.write(pc.yellow(`  ○ ${provider} — skipped (${message})\n`));
     }
   }
 
-  if (detectedProviders.includes("ollama")) {
-    process.stdout.write(pc.green("  ✓ ollama — Local agent runtime detected\n"));
-  }
-
-  let primaryMasterProvider: CliProviderType | undefined;
-  let fallbackMasterProviders: CliProviderType[] = [];
-
-  if (detectedProviders.length > 0) {
-    primaryMasterProvider = await select<CliProviderType>({
-      message: "Choose the primary master agent provider for swarm orchestration:",
-      choices: detectedProviders.map((provider) => ({
-        name: `${getCliProviderEntry(provider).label} — ${getCliProviderEntry(provider).description}`,
-        value: provider,
-      })),
-    });
-
-    const remainingProviders = detectedProviders.filter(
-      (provider) => provider !== primaryMasterProvider,
-    );
-
-    if (remainingProviders.length > 0) {
-      fallbackMasterProviders = await checkbox<CliProviderType>({
-        message: "Select optional fallback master-agent providers:",
-        choices: remainingProviders.map((provider) => ({
-          name: `${getCliProviderEntry(provider).label} — ${getCliProviderEntry(provider).description}`,
-          value: provider,
-        })),
-      });
-    }
-  } else {
-    process.stdout.write(
-      `${pc.yellow("  !")} No supported native agent CLIs were detected. You can still use direct chat, but swarm orchestration will stay limited until one is installed.\n`,
-    );
-  }
-
-  const keepRoleDefaults = await confirm({
-    message: "Keep the recommended role-routing defaults?",
+  const save = await confirm({
+    message: `Write configuration to ${configPath}?`,
     default: true,
   });
 
-  const configuredProviders: IGlobalConfig["providers"] = {
-    ...config.providers,
-  };
-  for (const provider of detectedProviders) {
-    const entry = getCliProviderEntry(provider);
-    configuredProviders[entry.provider] = {
-      ...configuredProviders[entry.provider],
-      enabled: true,
-    };
+  if (save) {
+    saveGlobalConfig(config);
+    process.stdout.write(`${pc.green("✓")} Saved configuration to ${pc.cyan(configPath)}\n`);
   }
-
-  const finalConfig: IGlobalConfig = {
-    ...config,
-    roles: keepRoleDefaults ? DEFAULT_CONFIG.roles : config.roles,
-    providers: configuredProviders,
-    swarm: {
-      onboardingComplete: true,
-      detectedProviders,
-      primaryMasterProvider,
-      fallbackMasterProviders,
-    },
-  };
-
-  store.saveGlobal(finalConfig);
-
-  process.stdout.write(
-    [
-      "",
-      `  ${pc.green("✓")} Configuration saved to ${pc.cyan(configPath)}`,
-      "",
-      `  Swarm primary: ${primaryMasterProvider ? getCliProviderEntry(primaryMasterProvider).label : "not set"}`,
-      `  Swarm fallbacks: ${fallbackMasterProviders.length > 0 ? fallbackMasterProviders.map(getCliProviderEntry).map((entry) => entry.label).join(", ") : "none"}`,
-      "",
-      "  Ready. Start with `aemeathcli` or `ac`.",
-      "  Use Shift+Tab inside the TUI to switch between swarm, guided edits, and direct chat.",
-      "",
-    ].join("\n"),
-  );
 
   return {
     configPath,
-    created: true,
-    config: finalConfig,
+    created: save,
+    config,
   };
 }

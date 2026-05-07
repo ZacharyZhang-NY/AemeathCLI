@@ -7,7 +7,7 @@ import { logger } from "../utils/logger.js";
 import { ServerConnectionError } from "../types/errors.js";
 import { MCPClient } from "./client.js";
 import type { IMCPClientOptions, IMCPToolSchema, IStdioTransportConfig } from "./client.js";
-import type { IMCPConfig, IMCPServerConfig } from "../types/config.js";
+import type { IMCPConfig, IMCPServerConfig } from "../types/mcp.js";
 
 // ── Server State ────────────────────────────────────────────────────────
 

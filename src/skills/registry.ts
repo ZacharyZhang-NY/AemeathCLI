@@ -15,7 +15,7 @@ import {
   getUniversalProjectSkillsDir,
 } from "../utils/pathResolver.js";
 import { SkillLoader } from "./loader.js";
-import type { ISkillDefinition } from "../types/config.js";
+import type { ISkillDefinition } from "../types/skill.js";
 
 // ── Constants ───────────────────────────────────────────────────────────
 

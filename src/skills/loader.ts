@@ -7,7 +7,7 @@ import { readFile } from "node:fs/promises";
 import { parse as parseYaml } from "yaml";
 import { z } from "zod";
 import { logger } from "../utils/logger.js";
-import type { ISkillFrontmatter, ISkillDefinition } from "../types/config.js";
+import type { ISkillFrontmatter, ISkillDefinition } from "../types/skill.js";
 import type { ModelRole } from "../types/model.js";
 
 // ── Zod Schema ──────────────────────────────────────────────────────────

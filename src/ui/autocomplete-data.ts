@@ -55,8 +55,8 @@ let dynamicFileRefs: readonly IAutocompleteItem[] = [];
 export const CODE_REFS: readonly IAutocompleteItem[] = [
   { label: "`src/", description: "Source directory" },
   { label: "`src/ui/", description: "UI components" },
-  { label: "`src/auth/", description: "Authentication modules" },
-  { label: "`src/providers/", description: "LLM provider adapters" },
+  { label: "`src/config/", description: "Configuration layer" },
+  { label: "`src/core/", description: "Session/runtime core" },
   { label: "`src/teams/", description: "Team management" },
   { label: "`src/core/", description: "Core engine" },
   { label: "`src/tools/", description: "Tool implementations" },

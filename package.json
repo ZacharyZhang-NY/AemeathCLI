@@ -47,7 +47,11 @@
   "license": "MIT",
   "dependencies": {
     "@inquirer/prompts": "^7.0.0",
+    "@mariozechner/pi-agent-core": "^0.67.68",
+    "@mariozechner/pi-ai": "^0.67.68",
+    "@mariozechner/pi-coding-agent": "^0.67.68",
     "@modelcontextprotocol/sdk": "^1.0.0",
+    "@sinclair/typebox": "^0.34.41",
     "better-sqlite3": "^11.0.0",
     "commander": "^13.0.0",
     "execa": "^9.0.0",

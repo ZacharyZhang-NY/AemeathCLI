@@ -1,23 +1,22 @@
 /**
- * Configuration management commands per PRD section 12.3
+ * Configuration management commands
  */
 
 import { Command } from "commander";
 import pc from "picocolors";
+import { loadConfig } from "../../config/loader.js";
+import { loadGlobalConfigFile, saveGlobalConfig } from "../../config/persist.js";
+import { AemeathConfigSchema } from "../../config/schema.js";
 
 export function createConfigCommand(): Command {
-  const config = new Command("config")
-    .description("Configuration management");
+  const config = new Command("config").description("Configuration management");
 
   config
     .command("get [key]")
     .description("Get configuration value (or all if no key)")
-    .action(async (key: string | undefined) => {
+    .action((key: string | undefined) => {
       try {
-        const { ConfigStore } = await import("../../storage/config-store.js");
-        const store = new ConfigStore();
-        const cfg = store.loadGlobal();
-
+        const cfg = loadConfig(process.cwd());
         if (key) {
           const value = getNestedValue(cfg, key);
           if (value === undefined) {
@@ -26,9 +25,10 @@ export function createConfigCommand(): Command {
             return;
           }
           process.stdout.write(`${key} = ${JSON.stringify(value, null, 2)}\n`);
-        } else {
-          process.stdout.write(JSON.stringify(cfg, null, 2) + "\n");
+          return;
         }
+
+        process.stdout.write(`${JSON.stringify(cfg, null, 2)}\n`);
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
         process.stderr.write(pc.red(`Failed to read config: ${message}\n`));
@@ -39,12 +39,9 @@ export function createConfigCommand(): Command {
   config
     .command("set <key> <value>")
     .description("Set a configuration value")
-    .action(async (key: string, value: string) => {
+    .action((key: string, value: string) => {
       try {
-        const { ConfigStore } = await import("../../storage/config-store.js");
-        const store = new ConfigStore();
-        const cfg = store.loadGlobal();
-
+        const cfg = loadGlobalConfigFile();
         let parsedValue: unknown;
         try {
           parsedValue = JSON.parse(value);
@@ -53,7 +50,8 @@ export function createConfigCommand(): Command {
         }
 
         setNestedValue(cfg as unknown as Record<string, unknown>, key, parsedValue);
-        store.saveGlobal(cfg);
+        const validated = AemeathConfigSchema.parse(cfg);
+        saveGlobalConfig(validated);
         process.stdout.write(pc.green(`Set ${key} = ${JSON.stringify(parsedValue)}\n`));
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
@@ -107,9 +105,11 @@ function getNestedValue(obj: unknown, path: string): unknown {
 function setNestedValue(obj: Record<string, unknown>, path: string, value: unknown): void {
   const keys = path.split(".");
   let current: Record<string, unknown> = obj;
-  for (let i = 0; i < keys.length - 1; i++) {
-    const key = keys[i];
-    if (!key) continue;
+  for (let index = 0; index < keys.length - 1; index += 1) {
+    const key = keys[index];
+    if (!key) {
+      continue;
+    }
     if (typeof current[key] !== "object" || current[key] === null) {
       current[key] = {};
     }

@@ -1,121 +1,129 @@
-/**
- * Tool Registry — central registry for all built-in and MCP tools.
- * Per PRD sections 5.1, 14.4
- */
+import { Type } from "@mariozechner/pi-ai";
+import { defineTool } from "@mariozechner/pi-coding-agent";
+import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
+import type { IToolDefinition, IToolParameter } from "../types/message.js";
+import type { IToolExecutionContext, IToolRegistration } from "../types/tool.js";
+import { findProjectRoot } from "../utils/pathResolver.js";
+import { createBashTool } from "./bash.js";
+import { createEditTool } from "./edit.js";
+import { createGitTool } from "./git.js";
+import { createGlobTool } from "./glob.js";
+import { createGrepTool } from "./grep.js";
+import { createReadTool } from "./read.js";
+import { createSpawnAgentTool } from "./spawn-agent.js";
+import { createWebFetchTool } from "./web-fetch.js";
+import { createWebSearchTool } from "./web-search.js";
+import { createWriteTool } from "./write.js";
+import type { BuildAemeathToolsOptions, ToolCategory } from "./types.js";
 
-import type {
-  IToolRegistry,
-  IToolRegistration,
-  IToolExecutionContext,
-  ToolCategory,
-} from "../types/tool.js";
-import type { IToolDefinition, IToolResult, IToolCall } from "../types/message.js";
-import { logger } from "../utils/logger.js";
-import { redactSecrets } from "../utils/sanitizer.js";
-
-function redactToolArgs(args: Record<string, unknown>): Record<string, unknown> {
-  const redacted: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(args)) {
-    if (typeof value === "string" && (key === "content" || key === "command" || key === "new_source")) {
-      redacted[key] = redactSecrets(value.length > 200 ? value.slice(0, 200) + "..." : value);
-    } else if (typeof value === "string") {
-      redacted[key] = redactSecrets(value);
-    } else {
-      redacted[key] = value;
-    }
+function createEnumString(parameter: IToolParameter) {
+  const values = parameter.enum ?? [];
+  if (values.length === 0) {
+    return Type.String({ description: parameter.description });
   }
-  return redacted;
+
+  return Type.Union(values.map((value) => Type.Literal(value)), {
+    description: parameter.description,
+  });
 }
 
-export class ToolRegistry implements IToolRegistry {
-  private readonly tools: Map<string, IToolRegistration> = new Map();
-  private readonly categoryIndex: Map<ToolCategory, Set<string>> = new Map();
+function parameterToSchema(parameter: IToolParameter) {
+  switch (parameter.type) {
+    case "number":
+      return Type.Number({ description: parameter.description });
+    case "boolean":
+      return Type.Boolean({ description: parameter.description });
+    case "array":
+      return Type.Array(Type.String(), { description: parameter.description });
+    case "string":
+    default:
+      return createEnumString(parameter);
+  }
+}
 
-  register(tool: IToolRegistration): void {
-    const name = tool.definition.name;
-    if (this.tools.has(name)) {
-      logger.warn({ toolName: name }, "Overwriting existing tool registration");
-    }
-    this.tools.set(name, tool);
-
-    let categorySet = this.categoryIndex.get(tool.category);
-    if (!categorySet) {
-      categorySet = new Set();
-      this.categoryIndex.set(tool.category, categorySet);
-    }
-    categorySet.add(name);
-
-    logger.debug({ toolName: name, category: tool.category }, "Tool registered");
+function definitionToSchema(definition: IToolDefinition) {
+  const properties: Record<string, ReturnType<typeof parameterToSchema>> = {};
+  for (const parameter of definition.parameters) {
+    const schema = parameterToSchema(parameter);
+    properties[parameter.name] = parameter.required ? schema : Type.Optional(schema);
   }
 
-  get(name: string): IToolRegistration | undefined {
-    return this.tools.get(name);
-  }
+  return Type.Object(properties, { additionalProperties: false });
+}
 
-  getAll(): readonly IToolRegistration[] {
-    return [...this.tools.values()];
-  }
+function createLegacyContext(options: BuildAemeathToolsOptions): IToolExecutionContext {
+  return {
+    workingDirectory: options.cwd,
+    permissionMode: options.permissionMode,
+    projectRoot: options.projectRoot,
+    allowedPaths: options.allowedPaths,
+    blockedCommands: options.blockedCommands,
+  };
+}
 
-  getDefinitions(): readonly IToolDefinition[] {
-    return [...this.tools.values()].map((t) => t.definition);
-  }
+function adaptLegacyTool(
+  registration: IToolRegistration,
+  options: BuildAemeathToolsOptions,
+  category: ToolCategory,
+): ToolDefinition {
+  const parameters = definitionToSchema(registration.definition);
+  const legacyContext = createLegacyContext(options);
 
-  getByCategory(category: ToolCategory): readonly IToolRegistration[] {
-    const names = this.categoryIndex.get(category);
-    if (!names) {
-      return [];
-    }
-    const results: IToolRegistration[] = [];
-    for (const name of names) {
-      const tool = this.tools.get(name);
-      if (tool) {
-        results.push(tool);
+  return defineTool({
+    name: registration.definition.name,
+    label: registration.definition.name,
+    description: registration.definition.description,
+    parameters,
+    async execute(_toolCallId, params) {
+      const normalized = params as Record<string, unknown>;
+      if (registration.requiresApproval(legacyContext, normalized)) {
+        const approved = await options.onApprovalNeeded(registration.definition.name, normalized);
+        if (!approved) {
+          throw new Error(`User denied approval for tool "${registration.definition.name}"`);
+        }
       }
-    }
-    return results;
+
+      const result = await registration.execute(normalized, legacyContext);
+      if (result.isError) {
+        throw new Error(result.content);
+      }
+
+      return {
+        content: [{ type: "text", text: result.content }],
+        details: { category, toolName: result.name },
+      };
+    },
+  });
+}
+
+export function buildAemeathTools(options: BuildAemeathToolsOptions): ToolDefinition[] {
+  const projectRoot = findProjectRoot(options.cwd);
+  const allowedPaths = options.allowedPaths.length > 0 ? options.allowedPaths : [projectRoot];
+  const normalizedOptions: BuildAemeathToolsOptions = {
+    ...options,
+    projectRoot,
+    allowedPaths,
+  };
+
+  const tools: ToolDefinition[] = [
+    adaptLegacyTool(createReadTool(), normalizedOptions, "file"),
+    adaptLegacyTool(createWriteTool(), normalizedOptions, "file"),
+    adaptLegacyTool(createEditTool(), normalizedOptions, "file"),
+    adaptLegacyTool(createGlobTool(), normalizedOptions, "search"),
+    adaptLegacyTool(createGrepTool(), normalizedOptions, "search"),
+    adaptLegacyTool(createBashTool(), normalizedOptions, "shell"),
+    adaptLegacyTool(createGitTool(), normalizedOptions, "git"),
+    adaptLegacyTool(createWebSearchTool(), normalizedOptions, "web"),
+    adaptLegacyTool(createWebFetchTool(), normalizedOptions, "web"),
+  ];
+
+  if (normalizedOptions.spawnSubagent) {
+    tools.push(
+      createSpawnAgentTool({
+        spawn: (prompt, spawnOptions) => normalizedOptions.spawnSubagent?.(prompt, spawnOptions) ?? Promise.resolve(""),
+      }) as unknown as ToolDefinition,
+    );
   }
 
-  async execute(
-    call: IToolCall,
-    context: IToolExecutionContext,
-  ): Promise<IToolResult> {
-    const tool = this.tools.get(call.name);
-    if (!tool) {
-      return {
-        toolCallId: call.id,
-        name: call.name,
-        content: `Unknown tool: ${call.name}`,
-        isError: true,
-      };
-    }
-
-    if (tool.requiresApproval(context, call.arguments)) {
-      return {
-        toolCallId: call.id,
-        name: call.name,
-        content: `Tool "${call.name}" requires user approval in ${context.permissionMode} mode.`,
-        isError: true,
-      };
-    }
-
-    try {
-      logger.debug({ toolName: call.name, args: redactToolArgs(call.arguments) }, "Executing tool");
-      const result = await tool.execute(call.arguments, context);
-      return {
-        ...result,
-        toolCallId: call.id,
-        name: call.name,
-      };
-    } catch (error: unknown) {
-      const message =
-        error instanceof Error ? error.message : "Unknown execution error";
-      logger.error({ toolName: call.name, error: message }, "Tool execution failed");
-      return {
-        toolCallId: call.id,
-        name: call.name,
-        content: message,
-        isError: true,
-      };
-    }
-  }
+  return tools;
 }

@@ -6,7 +6,8 @@
  * - Configurable budget alerts
  */
 
-import type { ProviderName, ModelRole, ITokenUsage, ICostConfig } from "../types/index.js";
+import type { ProviderName, ModelRole, ITokenUsage } from "../types/index.js";
+import type { AemeathConfig } from "../config/schema.js";
 import { createTokenUsage, formatCost } from "../utils/index.js";
 import { logger } from "../utils/index.js";
 import { getEventBus } from "./event-bus.js";
@@ -27,10 +28,10 @@ interface ICostBreakdown {
 
 export class CostTracker {
   private readonly entries: ICostEntry[] = [];
-  private readonly budgetConfig: ICostConfig;
+  private readonly budgetConfig: AemeathConfig["cost"];
   private warningEmitted = false;
 
-  constructor(budgetConfig: ICostConfig) {
+  constructor(budgetConfig: AemeathConfig["cost"]) {
     this.budgetConfig = budgetConfig;
   }
 

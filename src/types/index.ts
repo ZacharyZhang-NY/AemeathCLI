@@ -62,26 +62,9 @@ export type {
   ILayoutConfig,
 } from "./team.js";
 
-export type {
-  IProviderConfig,
-  IPermissionConfig,
-  PaneBackend,
-  ISplitPanelConfig,
-  ISwarmConfig,
-  ICostConfig,
-  ITelemetryConfig,
-  IOAuthProviderConfig,
-  IOAuthConfig,
-  IGlobalConfig,
-  IMCPServerConfig,
-  IMCPConfig,
-  ISkillFrontmatter,
-  ISkillDefinition,
-  AuthMethod,
-  ICredential,
-} from "./config.js";
-
-export { DEFAULT_CONFIG } from "./config.js";
+export type { IMCPServerConfig, IMCPConfig } from "./mcp.js";
+export type { ISkillFrontmatter, ISkillDefinition } from "./skill.js";
+export type { AuthMethod, ICredential } from "./auth.js";
 
 export {
   AemeathError,

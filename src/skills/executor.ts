@@ -5,7 +5,7 @@
  */
 
 import { logger } from "../utils/logger.js";
-import type { ISkillDefinition } from "../types/config.js";
+import type { ISkillDefinition } from "../types/skill.js";
 import type { ModelRole } from "../types/model.js";
 import type { SkillRegistry } from "./registry.js";
 
